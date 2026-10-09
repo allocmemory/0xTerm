@@ -57,6 +57,18 @@ fn scrollback_keeps_old_lines() {
 }
 
 #[test]
+fn kitty_keyboard_handshake() {
+    // Claude Code's sequence: query, and only if answered, push flags 5 (disambiguate + alternate keys).
+    let (mut e, replies, _) = engine(4, 20);
+    e.advance(b"\x1b[?u");
+    assert_eq!(&*replies.lock().unwrap(), b"\x1b[?0u");
+    e.advance(b"\x1b[>5u");
+    assert!(e.term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES | TermMode::REPORT_ALTERNATE_KEYS));
+    e.advance(b"\x1b[<u");
+    assert!(!e.term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
+}
+
+#[test]
 fn answers_queries() {
     let (mut e, replies, _) = engine(4, 20);
     e.advance(b"ab\x1b[6n"); // where is the cursor?

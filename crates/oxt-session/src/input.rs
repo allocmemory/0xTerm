@@ -2,7 +2,9 @@
 //!
 //! Plain text (including IME composition) skips this and is written as UTF-8.
 //! This module only handles what text can't express: arrows, function keys,
-//! control and Meta combinations, bracketed paste and mouse reports.
+//! control and Meta combinations, bracketed paste and mouse reports. Programs
+//! that turn on the kitty keyboard protocol get its `CSI code ; mods u` form
+//! for the keys legacy encoding can't tell apart.
 
 use alacritty_terminal::term::TermMode;
 
@@ -63,6 +65,12 @@ pub fn encode_key(key: Key, mods: Mods, mode: TermMode, option_as_meta: bool) ->
     let tilde = |n: u8| -> Vec<u8> { if modified { format!("\x1b[{n};{csi_mods}~") } else { format!("\x1b[{n}~") }.into_bytes() };
     let with_meta = |bytes: Vec<u8>| if meta { [&[0x1b], bytes.as_slice()].concat() } else { bytes };
 
+    if mode.intersects(TermMode::DISAMBIGUATE_ESC_CODES | TermMode::REPORT_ALL_KEYS_AS_ESC)
+        && let Some(bytes) = encode_kitty(key, Mods { alt: meta, ..mods }, mode)
+    {
+        return Some(bytes);
+    }
+
     Some(match key {
         Key::Up => cursor(b'A'),
         Key::Down => cursor(b'B'),
@@ -90,6 +98,31 @@ pub fn encode_key(key: Key, mods: Mods, mode: TermMode, option_as_meta: bool) ->
         Key::Char(c) if meta => with_meta(c.to_string().into_bytes()),
         Key::Char(_) => return None,
     })
+}
+
+/// The kitty keyboard protocol's `CSI code [: shifted] [; mods] u`, for keys that
+/// are ambiguous in legacy encoding: Esc, modified Enter/Tab/Backspace, and
+/// Ctrl or Meta + a character. `None` keeps the legacy bytes, which kitty shares
+/// for everything else (arrows, function keys, plain text).
+fn encode_kitty(key: Key, mods: Mods, mode: TermMode) -> Option<Vec<u8>> {
+    let modified = mods.shift || mods.ctrl || mods.alt;
+    let code = match key {
+        Key::Escape => "27".to_owned(),
+        Key::Enter if modified => "13".to_owned(),
+        Key::Tab if modified => "9".to_owned(),
+        Key::Backspace if modified => "127".to_owned(),
+        Key::Char(c) if mods.ctrl || mods.alt => {
+            let base = c.to_ascii_lowercase();
+            if mods.shift && mode.contains(TermMode::REPORT_ALTERNATE_KEYS) && base != c.to_ascii_uppercase() {
+                format!("{}:{}", base as u32, c.to_ascii_uppercase() as u32)
+            } else {
+                (base as u32).to_string()
+            }
+        }
+        _ => return None,
+    };
+    let param = mods.param();
+    Some(if param == 1 { format!("\x1b[{code}u") } else { format!("\x1b[{code};{param}u") }.into_bytes())
 }
 
 /// Ctrl+key → C0 byte: Ctrl-A is 0x01, Ctrl-[ is ESC, Ctrl-Space is NUL.
@@ -227,6 +260,22 @@ mod tests {
         assert_eq!(key(Key::F(1), NONE, TermMode::NONE), b"\x1bOP");
         assert_eq!(key(Key::F(5), NONE, TermMode::NONE), b"\x1b[15~");
         assert_eq!(key(Key::Tab, SHIFT, TermMode::NONE), b"\x1b[Z");
+    }
+
+    #[test]
+    fn kitty_keyboard_protocol() {
+        let kitty = TermMode::DISAMBIGUATE_ESC_CODES;
+        assert_eq!(key(Key::Enter, SHIFT, kitty), b"\x1b[13;2u");
+        assert_eq!(key(Key::Enter, NONE, kitty), b"\r");
+        assert_eq!(key(Key::Escape, NONE, kitty), b"\x1b[27u");
+        assert_eq!(key(Key::Tab, SHIFT, kitty), b"\x1b[9;2u");
+        assert_eq!(key(Key::Char('c'), CTRL, kitty), b"\x1b[99;5u");
+        assert_eq!(key(Key::Char('b'), ALT, kitty), b"\x1b[98;3u");
+        assert_eq!(key(Key::Up, NONE, kitty), b"\x1b[A");
+        let ctrl_shift = Mods { shift: true, ctrl: true, alt: false };
+        assert_eq!(key(Key::Char('a'), ctrl_shift, kitty | TermMode::REPORT_ALTERNATE_KEYS), b"\x1b[97:65;6u");
+        // Without the protocol, Shift+Enter stays a plain Enter.
+        assert_eq!(key(Key::Enter, SHIFT, TermMode::NONE), b"\r");
     }
 
     #[test]

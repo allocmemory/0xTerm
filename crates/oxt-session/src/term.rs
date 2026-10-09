@@ -43,7 +43,9 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(size: GridSize, scrollback: usize, listener: Listener) -> Self {
-        let config = Config { scrolling_history: scrollback, ..Config::default() };
+        // Kitty keyboard protocol: programs that ask for it (Claude Code, Neovim, Helix)
+        // can tell Shift+Enter from Enter, and Esc from the start of a sequence.
+        let config = Config { scrolling_history: scrollback, kitty_keyboard: true, ..Config::default() };
         Engine {
             term: Term::new(config, &size, listener.clone()),
             parser: ansi::Processor::new(),
