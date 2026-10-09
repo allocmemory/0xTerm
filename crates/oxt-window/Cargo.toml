@@ -1,0 +1,18 @@
+[package]
+name = "oxt-window"
+description = "The window: title row, tabs, split panes, and the side panels around them."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+oxt-config.workspace = true
+oxt-session.workspace = true
+oxt-task.workspace = true
+oxt-terminal-view.workspace = true
+oxt-toolbelt.workspace = true

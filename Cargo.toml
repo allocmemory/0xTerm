@@ -1,0 +1,45 @@
+[workspace]
+resolver = "3"
+members = ["crates/oxt-config", "crates/oxt-task", "crates/oxt-session", "crates/oxt-toolbelt", "crates/oxt-terminal-view", "crates/oxt-window", "app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+authors = ["allocmemory <allocx@mailbox.org>"]
+repository = "https://github.com/allocmemory/0xTerm"
+homepage = "https://0xterm.org"
+
+[workspace.dependencies]
+oxt-config = { path = "crates/oxt-config" }
+oxt-task = { path = "crates/oxt-task" }
+oxt-session = { path = "crates/oxt-session" }
+oxt-toolbelt = { path = "crates/oxt-toolbelt" }
+oxt-terminal-view = { path = "crates/oxt-terminal-view" }
+oxt-window = { path = "crates/oxt-window" }
+
+alacritty_terminal = "0.26"
+async-channel = "2"
+# Pinned exactly: GPUI moves fast and gpui-kit pins its own GPUI (gpui-pre).
+gpui-kit = { version = "=0.7.1", features = ["tree-sitter-languages"] }
+grep-regex = "0.1"
+grep-searcher = "0.1"
+ignore = "0.4"
+libc = "0.2"
+# Mermaid → SVG with no JavaScript. Chosen over mermaid-rs-renderer for its dark theme and parity.
+# No ELK layout: merman-elk-layered is EPL-2.0, which GPL-3.0 code can't link.
+merman = { version = "0.8", default-features = false, features = ["all-diagrams", "complete-svg"] }
+notify = "8.2"
+regex-syntax = "0.8"
+resvg = "0.48"
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+
+# Dependencies optimized even in debug builds: an unoptimized parser and text
+# shaper make a debug terminal crawl under heavy output.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+strip = "symbols"

@@ -1,0 +1,17 @@
+[package]
+name = "oxt-terminal-view"
+description = "The GPU terminal pane: draws a session's grid and turns input into bytes."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+async-channel.workspace = true
+gpui-kit.workspace = true
+oxt-config.workspace = true
+oxt-session.workspace = true
+oxt-task.workspace = true

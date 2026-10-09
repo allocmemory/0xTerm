@@ -1,0 +1,15 @@
+[package]
+name = "oxt-session"
+description = "One pane's state: a task plus the terminal engine, input encoding, shell integration."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+oxt-task.workspace = true
+alacritty_terminal.workspace = true
+async-channel.workspace = true

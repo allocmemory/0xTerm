@@ -1,0 +1,38 @@
+# 0xTerm config. Copy to ~/.config/0xterm/config.toml and change what you like.
+# Anything left out keeps the value shown here.
+
+[font]
+family = "Menlo"
+size = 13.0
+line_height = 1.2
+
+[terminal]
+# Empty means your login shell ($SHELL).
+shell = ""
+scrollback = 10000
+# Option+key sends ESC+key, which shells use for word movement.
+option_as_meta = true
+
+# "system" follows macOS light/dark; or "light" / "dark".
+[theme]
+mode = "system"
+
+[theme.dark]
+background = "#0b0b0b"
+foreground = "#e6e6e6"
+cursor = "#e6e6e6"
+selection = "#264f78"
+ansi = [
+  "#1b1b1b", "#ff6b6b", "#7ee787", "#f2cc60", "#79c0ff", "#d2a8ff", "#76e3ea", "#d0d0d0",
+  "#5a5a5a", "#ff8b8b", "#9ef0a6", "#f8dc8a", "#a5d6ff", "#e2c5ff", "#b3f0ff", "#ffffff",
+]
+
+[theme.light]
+background = "#ffffff"
+foreground = "#1f2328"
+cursor = "#1f2328"
+selection = "#b6d7ff"
+ansi = [
+  "#24292f", "#cf222e", "#116329", "#4d2d00", "#0969da", "#8250df", "#1b7c83", "#6e7781",
+  "#57606a", "#a40e26", "#1a7f37", "#633c01", "#218bff", "#a475f9", "#3192aa", "#8c959f",
+]

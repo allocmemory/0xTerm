@@ -1,0 +1,13 @@
+[package]
+name = "oxt-task"
+description = "Shell processes on a pty: spawn, read, write, resize, cwd, foreground job."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+libc.workspace = true

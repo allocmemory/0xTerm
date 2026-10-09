@@ -1,0 +1,25 @@
+[package]
+name = "oxterm"
+description = "0xTerm: a minimal, mouse-first, GPU terminal for macOS."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "oxterm"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+notify.workspace = true
+gpui-kit.workspace = true
+oxt-config.workspace = true
+oxt-session.workspace = true
+oxt-task.workspace = true
+oxt-terminal-view.workspace = true
+oxt-toolbelt.workspace = true
+oxt-window.workspace = true

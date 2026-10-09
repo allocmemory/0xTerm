@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <defs>
+    <linearGradient id="oxt-bezel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbfcfd"/>
+      <stop offset=".2" stop-color="#cdd3d9"/>
+      <stop offset=".47" stop-color="#8f989f"/>
+      <stop offset=".5" stop-color="#5c656d"/>
+      <stop offset=".53" stop-color="#aab3ba"/>
+      <stop offset=".82" stop-color="#e8ecef"/>
+      <stop offset="1" stop-color="#7a838b"/>
+    </linearGradient>
+    <linearGradient id="oxt-screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e2428"/>
+      <stop offset="1" stop-color="#0f1214"/>
+    </linearGradient>
+    <linearGradient id="oxt-glyph" x1="0" y1="36.5" x2="0" y2="73.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".46" stop-color="#d3d9de"/>
+      <stop offset=".5" stop-color="#7f888f"/>
+      <stop offset=".56" stop-color="#e2e6e9"/>
+      <stop offset="1" stop-color="#9ba4ab"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#oxt-bezel)" fill-rule="evenodd" d="M42 8H118A34 34 0 0 1 152 42V118A34 34 0 0 1 118 152H42A34 34 0 0 1 8 118V42A34 34 0 0 1 42 8ZM44 20A24 24 0 0 0 20 44V116A24 24 0 0 0 44 140H116A24 24 0 0 0 140 116V44A24 24 0 0 0 116 20Z"/>
+  <rect x="20" y="20" width="120" height="120" rx="24" fill="url(#oxt-screen)"/>
+  <g fill="none" stroke="url(#oxt-glyph)" stroke-width="6.5" stroke-linecap="round">
+    <rect x="35" y="36.5" width="22" height="37" rx="11"/>
+    <path d="M42 64 50 46" stroke-width="5.2"/>
+    <path d="M64 46.5 84 73.5M84 46.5 64 73.5"/>
+  </g>
+  <rect x="90" y="36.5" width="17" height="37" rx="1.5" fill="#6f7880"/>
+</svg>
