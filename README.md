@@ -144,6 +144,7 @@ cargo run -p oxterm                 # run a debug build
 cargo test --workspace              # run the tests
 packaging/bundle.sh                 # build dist/0xTerm.app (release, ad-hoc signed)
 packaging/dmg.sh                    # build dist/0xTerm-<version>.dmg
+packaging/install.sh                # build and install to /Applications, replacing the old copy
 ```
 
 `SIGN_ID="Developer ID Application: …" packaging/bundle.sh` signs with the
