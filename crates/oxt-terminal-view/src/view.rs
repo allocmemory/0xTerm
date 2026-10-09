@@ -35,6 +35,9 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-pagedown", ScrollPageDown, ctx),
         KeyBinding::new("cmd-home", ScrollToTop, ctx),
         KeyBinding::new("cmd-end", ScrollToBottom, ctx),
+        // The window root binds Tab to focus navigation; in a terminal it belongs to the shell.
+        KeyBinding::new("tab", NoAction, ctx),
+        KeyBinding::new("shift-tab", NoAction, ctx),
     ]);
 }
 

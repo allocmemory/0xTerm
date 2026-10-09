@@ -57,6 +57,24 @@ fn open_workspace(cx: &mut App) {
                 }
             });
         }
+        // Debug builds: OXTERM_KEYS="tab ctrl-c" presses keys through GPUI's dispatch once the shell is up.
+        #[cfg(debug_assertions)]
+        if let Ok(keys) = std::env::var("OXTERM_KEYS") {
+            window
+                .spawn(cx, async move |cx| {
+                    cx.background_executor().timer(std::time::Duration::from_secs(3)).await;
+                    cx.update(|window, cx| {
+                        for key in keys.split_whitespace() {
+                            match Keystroke::parse(key) {
+                                Ok(keystroke) => _ = window.dispatch_keystroke(keystroke, cx),
+                                Err(err) => eprintln!("OXTERM_KEYS: {key}: {err}"),
+                            }
+                        }
+                    })
+                    .ok();
+                })
+                .detach();
+        }
         workspace
     });
     if let Err(err) = opened {
