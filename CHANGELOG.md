@@ -3,6 +3,20 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [0.1.1] - 2026-10-15
+
+A bug-fix release.
+
+### Fixed
+
+- Tab and Shift+Tab reach the shell, so file, folder and command completion
+  work.
+- Shift+Enter is sent as its own key through the kitty keyboard protocol.
+
+### Added
+
+- `packaging/install.sh` builds 0xTerm and installs it to /Applications.
+
 ## [0.1.0] - 2026-10-09
 
 The first release.
@@ -38,4 +52,5 @@ The first release.
 - Releases are ad-hoc signed, not notarized. See the README for the
   first-launch steps.
 
+[0.1.1]: https://github.com/allocmemory/0xTerm/releases/tag/v0.1.1
 [0.1.0]: https://github.com/allocmemory/0xTerm/releases/tag/v0.1.0
