@@ -16,3 +16,7 @@ oxt-session.workspace = true
 oxt-task.workspace = true
 oxt-terminal-view.workspace = true
 oxt-toolbelt.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+async-channel.workspace = true

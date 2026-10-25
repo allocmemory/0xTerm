@@ -16,6 +16,7 @@ use oxt_task::Command;
 use oxt_terminal_view::{TerminalEvent, TerminalStyle, TerminalView};
 use oxt_toolbelt::{Sidebar, ToolbeltEvent, Viewer, shell_quote};
 
+use crate::links::{self, Route, Source};
 use crate::notices;
 use crate::pane::{Pane, PaneId, render_pane};
 use crate::split::{Axis, Node};
@@ -116,6 +117,7 @@ impl Workspace {
         let viewer = cx.new(|cx| Viewer::new(chrome, dark, window, cx));
         set_component_theme(dark, window, cx);
         cx.subscribe_in(&sidebar, window, |this, _, event, window, cx| this.on_toolbelt_event(event, window, cx)).detach();
+        cx.subscribe_in(&viewer, window, |this, _, event, window, cx| this.on_toolbelt_event(event, window, cx)).detach();
         let mut workspace = Workspace {
             sidebar,
             followed: None,
@@ -223,6 +225,10 @@ impl Workspace {
             TerminalEvent::OpenFile { path, line } => {
                 let request = oxt_toolbelt::OpenRequest { path: path.clone(), line: *line, find: None };
                 self.open(request, window, cx);
+            }
+            TerminalEvent::OpenUrl { url, shown } => {
+                let source = shown.clone().map_or(Source::Text, Source::Hyperlink);
+                self.open_url(url, source, window, cx);
             }
         }
     }
@@ -391,6 +397,29 @@ impl Workspace {
                 self.focus_active(window, cx);
             }
             ToolbeltEvent::NewTabHere(dir) => self.new_tab_in(Some(dir.clone()), window, cx),
+            ToolbeltEvent::OpenUrl(url) => self.open_url(url, Source::Markdown, window, cx),
+        }
+    }
+
+    /// Every clicked URL ends here: files open in the viewer, web and mail
+    /// links outside, after asking when the target wasn't on screen.
+    fn open_url(&mut self, url: &str, source: Source, window: &mut Window, cx: &mut Context<Self>) {
+        match links::route(url) {
+            Some(Route::File(path)) => self.open(oxt_toolbelt::OpenRequest::path(path), window, cx),
+            Some(Route::External(url)) => match links::confirm_detail(&url, &source) {
+                None => cx.open_url(&url),
+                Some(detail) => {
+                    let buttons = [PromptButton::Ok("Open".into()), PromptButton::Cancel("Cancel".into())];
+                    let answer = window.prompt(PromptLevel::Warning, "Open this link?", Some(&detail), &buttons, cx);
+                    cx.spawn(async move |_, cx| {
+                        if answer.await == Ok(0) {
+                            cx.update(|cx| cx.open_url(&url));
+                        }
+                    })
+                    .detach();
+                }
+            },
+            None => {}
         }
     }
 

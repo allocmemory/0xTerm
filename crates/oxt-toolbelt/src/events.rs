@@ -25,6 +25,8 @@ pub enum ToolbeltEvent {
     /// `cd` the active pane here.
     CdHere(PathBuf),
     NewTabHere(PathBuf),
+    /// A URL clicked in a Markdown preview. The window decides where it may go.
+    OpenUrl(String),
 }
 
 /// A path being dragged from the tree. Panes accept it and type the path.

@@ -5262,18 +5262,21 @@ dependencies = [
  "oxt-task",
  "regex-syntax",
  "resvg 0.48.1",
+ "url",
 ]
 
 [[package]]
 name = "oxt-window"
 version = "0.2.1"
 dependencies = [
+ "async-channel",
  "gpui-kit",
  "oxt-config",
  "oxt-session",
  "oxt-task",
  "oxt-terminal-view",
  "oxt-toolbelt",
+ "url",
 ]
 
 [[package]]

@@ -1,12 +1,22 @@
 //! ⌘-click targets in terminal text: URLs, and file paths with an optional
-//! `:line[:col]`, the way compilers and grep print them.
+//! `:line[:col]`, the way compilers and grep print them. Where a URL may go
+//! is the window's call (`oxt-window`'s links), not the pane's.
 
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Link {
+    /// A URL printed in the output.
     Url(String),
-    File { path: PathBuf, line: Option<u64> },
+    /// An OSC 8 hyperlink: its URL, and the text it's drawn over.
+    Hyperlink {
+        uri: String,
+        shown: String,
+    },
+    File {
+        path: PathBuf,
+        line: Option<u64>,
+    },
 }
 
 /// Characters that can't be part of a path or URL token.
@@ -67,6 +77,14 @@ mod tests {
         let line = "see https://example.com/a?b=1. for more";
         assert_eq!(link_at(line, 8, None, None), Some(Link::Url("https://example.com/a?b=1".into())));
         assert_eq!(link_at(line, 0, None, None), None);
+    }
+
+    #[test]
+    fn printed_urls_go_to_the_window_as_written() {
+        // `FILE:` and `ftp:` too: routing them is the window's job.
+        for url in ["file:///tmp/run.command", "ftp://example.com/a"] {
+            assert_eq!(link_at(&format!("see {url} here"), 6, None, None), Some(Link::Url(url.into())));
+        }
     }
 
     #[test]

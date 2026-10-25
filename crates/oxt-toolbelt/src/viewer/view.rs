@@ -13,7 +13,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use oxt_config::Chrome;
 
-use crate::events::OpenRequest;
+use crate::events::{OpenRequest, ToolbeltEvent};
 use crate::viewer::load::{self, Content};
 use crate::viewer::markdown::{self, Segment};
 use crate::viewer::{find, mermaid};
@@ -63,6 +63,8 @@ pub struct Viewer {
     rendering: HashSet<(String, bool)>,
     _subscriptions: Vec<Subscription>,
 }
+
+impl EventEmitter<ToolbeltEvent> for Viewer {}
 
 impl Viewer {
     pub fn new(chrome: Chrome, dark: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -428,18 +430,33 @@ impl Viewer {
     }
 }
 
-/// Relative links open in the viewer; web links open in the browser.
-fn open_link(viewer: &Entity<Viewer>, base: &Path, link: &SharedString, window: &mut Window, cx: &mut App) {
-    if link.contains("://") || link.starts_with("mailto:") {
-        cx.open_url(link);
-        return;
+/// Where a Markdown link goes.
+#[derive(Debug, PartialEq)]
+enum LinkTarget {
+    /// A URL: the window decides where it may go, and asks first.
+    Url(String),
+    /// A tab in this viewer.
+    File(PathBuf),
+}
+
+/// Relative links open in the viewer; URLs go to the window.
+fn link_target(base: &Path, link: &str) -> Option<LinkTarget> {
+    if url::Url::parse(link).is_ok() {
+        return Some(LinkTarget::Url(link.to_owned()));
     }
     let target = link.split('#').next().unwrap_or_default();
     if target.is_empty() {
-        return;
+        return None;
     }
-    let path = base.join(target);
-    viewer.update(cx, |viewer, cx| viewer.open(OpenRequest::path(path), window, cx));
+    Some(LinkTarget::File(base.join(target)))
+}
+
+fn open_link(viewer: &Entity<Viewer>, base: &Path, link: &SharedString, window: &mut Window, cx: &mut App) {
+    match link_target(base, link) {
+        Some(LinkTarget::Url(url)) => viewer.update(cx, |_, cx| cx.emit(ToolbeltEvent::OpenUrl(url))),
+        Some(LinkTarget::File(path)) => viewer.update(cx, |viewer, cx| viewer.open(OpenRequest::path(path), window, cx)),
+        None => {}
+    }
 }
 
 fn modified(path: &Path) -> Option<SystemTime> {
@@ -497,4 +514,21 @@ fn notice(text: &str, chrome: Chrome) -> AnyElement {
         .text_color(rgba(chrome.faint))
         .child(text.to_owned())
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `super::*`: GPUI's glob brings its own `test` attribute.
+    use super::{LinkTarget, link_target};
+    use std::path::Path;
+
+    #[test]
+    fn urls_go_to_the_window_and_relative_links_open_here() {
+        let base = Path::new("/repo/docs");
+        for url in ["https://0xterm.org/docs/", "mailto:a@b.c", "FILE:///repo/run.command", "smb://evil/share"] {
+            assert_eq!(link_target(base, url), Some(LinkTarget::Url(url.into())));
+        }
+        assert_eq!(link_target(base, "guide.md#setup"), Some(LinkTarget::File("/repo/docs/guide.md".into())));
+        assert_eq!(link_target(base, "#top"), None);
+    }
 }

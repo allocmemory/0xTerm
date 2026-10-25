@@ -20,6 +20,7 @@ ignore.workspace = true
 merman.workspace = true
 regex-syntax.workspace = true
 resvg.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 oxt-session.workspace = true

@@ -1,6 +1,7 @@
 //! The window: tabs, each tab's split tree of panes, and the toolbelt panels
 //! around them.
 
+mod links;
 mod notices;
 mod pane;
 pub mod split;

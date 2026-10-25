@@ -59,6 +59,12 @@ pub enum TerminalEvent {
         path: PathBuf,
         line: Option<u64>,
     },
+    /// ⌘-click on a URL: printed (`shown` is `None`), or an OSC 8 hyperlink
+    /// drawn over `shown`. The window decides where it may go.
+    OpenUrl {
+        url: String,
+        shown: Option<String>,
+    },
 }
 
 pub struct TerminalView {
@@ -245,15 +251,19 @@ impl TerminalView {
         let engine = self.session.lock();
         let grid = engine.term.grid();
         if let Some(link) = grid[point].hyperlink() {
-            let uri = link.uri().to_owned();
-            drop(engine);
-            return match uri.strip_prefix("file://") {
-                Some(rest) => {
-                    let path = PathBuf::from(&rest[rest.find('/').unwrap_or(0)..]);
-                    path.is_file().then_some(Link::File { path, line: None })
-                }
-                None => Some(Link::Url(uri)),
-            };
+            // The text it's drawn over: the run of cells on this row with the same link.
+            let row = &grid[point.line];
+            let same = |c: usize| row[Column(c)].hyperlink().as_ref() == Some(&link);
+            let (mut start, mut end) = (point.column.0, point.column.0);
+            while start > 0 && same(start - 1) {
+                start -= 1;
+            }
+            while end < grid.last_column().0 && same(end + 1) {
+                end += 1;
+            }
+            let shown =
+                (start..=end).map(|c| &row[Column(c)]).filter(|cell| !cell.flags.contains(Flags::WIDE_CHAR_SPACER)).map(|cell| cell.c).collect();
+            return Some(Link::Hyperlink { uri: link.uri().to_owned(), shown });
         }
         // A long path may wrap across rows; join the whole logical line.
         let wrapped = |line: Line| grid[line][grid.last_column()].flags.contains(Flags::WRAPLINE);
@@ -335,7 +345,8 @@ impl TerminalView {
         let (point, side, col, line) = self.grid_point(event.position);
         if event.modifiers.platform && event.button == MouseButton::Left {
             match self.link_at(point) {
-                Some(Link::Url(url)) => cx.open_url(&url),
+                Some(Link::Url(url)) => cx.emit(TerminalEvent::OpenUrl { url, shown: None }),
+                Some(Link::Hyperlink { uri, shown }) => cx.emit(TerminalEvent::OpenUrl { url: uri, shown: Some(shown) }),
                 Some(Link::File { path, line }) => cx.emit(TerminalEvent::OpenFile { path, line }),
                 None => {}
             }
