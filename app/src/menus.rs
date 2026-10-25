@@ -103,8 +103,12 @@ pub fn install(cx: &mut App) {
     ]);
 }
 
-fn with_active_window(cx: &mut App, f: impl FnOnce(&mut Window)) {
-    if let Some(handle) = cx.active_window() {
-        let _ = handle.update(cx, |_, window, _| f(window));
-    }
+/// GPUI runs app actions while it's updating the focused window, so a nested
+/// update of that window fails; deferring runs `f` once that update is done.
+fn with_active_window(cx: &mut App, f: impl FnOnce(&mut Window) + 'static) {
+    cx.defer(|cx| {
+        if let Some(handle) = cx.active_window() {
+            let _ = handle.update(cx, |_, window, _| f(window));
+        }
+    });
 }

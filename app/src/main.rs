@@ -39,18 +39,22 @@ fn open_workspace(cwd: Option<PathBuf>, cx: &mut App) -> Option<(AnyWindowHandle
         kind: if background_launch() { WindowKind::PopUp } else { WindowKind::Normal },
         ..Default::default()
     };
+    // Debug builds: the OXTERM_* hooks drive only the first window, so an
+    // action that opens a window doesn't set them off again.
+    #[cfg(debug_assertions)]
+    let scripted = cx.windows().is_empty();
     let opened = gpui_kit::open_window(options, cx, |window, cx| {
         let workspace = cx.new(|cx| Workspace::new(config, cwd, window, cx));
         config_watch::register(window.window_handle(), &workspace, cx);
         // Debug builds: OXTERM_TYPE is typed into the first pane, for scripted checks.
         #[cfg(debug_assertions)]
-        if let Some(script) = std::env::var_os("OXTERM_TYPE") {
+        if let Some(script) = std::env::var_os("OXTERM_TYPE").filter(|_| scripted) {
             let script = script.to_string_lossy().replace("\\n", "\n");
             workspace.read(cx).type_into_active(&script, cx);
         }
         // Debug builds: OXTERM_OPEN="path[:line[:find]]" opens a file in the viewer.
         #[cfg(debug_assertions)]
-        if let Ok(spec) = std::env::var("OXTERM_OPEN") {
+        if let Some(spec) = std::env::var("OXTERM_OPEN").ok().filter(|_| scripted) {
             let mut parts = spec.splitn(3, ':');
             let path = parts.next().unwrap_or_default().into();
             let line = parts.next().and_then(|l| l.parse().ok());
@@ -59,7 +63,7 @@ fn open_workspace(cwd: Option<PathBuf>, cx: &mut App) -> Option<(AnyWindowHandle
         }
         // Debug builds: OXTERM_ACTIONS="workspace::SplitRight,workspace::NewTab" runs actions after startup.
         #[cfg(debug_assertions)]
-        if let Ok(names) = std::env::var("OXTERM_ACTIONS") {
+        if let Some(names) = std::env::var("OXTERM_ACTIONS").ok().filter(|_| scripted) {
             window.defer(cx, move |window, cx| {
                 for name in names.split(',') {
                     match cx.build_action(name.trim(), None) {
@@ -71,7 +75,7 @@ fn open_workspace(cwd: Option<PathBuf>, cx: &mut App) -> Option<(AnyWindowHandle
         }
         // Debug builds: OXTERM_KEYS="tab ctrl-c" presses keys through GPUI's dispatch once the shell is up.
         #[cfg(debug_assertions)]
-        if let Ok(keys) = std::env::var("OXTERM_KEYS") {
+        if let Some(keys) = std::env::var("OXTERM_KEYS").ok().filter(|_| scripted) {
             window
                 .spawn(cx, async move |cx| {
                     cx.background_executor().timer(std::time::Duration::from_secs(3)).await;
@@ -151,7 +155,8 @@ fn main() {
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-n", NewWindow, None)]);
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.on_action(|_: &NewWindow, cx| _ = open_workspace(None, cx));
-        cx.on_action(|_: &OpenSettings, cx| open_settings(cx));
+        // Deferred: it updates the focused window, which GPUI is updating while it runs actions.
+        cx.on_action(|_: &OpenSettings, cx| cx.defer(open_settings));
         cx.bind_keys([KeyBinding::new("cmd-,", OpenSettings, None)]);
         macos::start_updater();
         menus::install(cx);
