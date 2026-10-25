@@ -4,6 +4,10 @@
 
 use std::path::{Path, PathBuf};
 
+use oxt_session::alacritty_terminal::grid::{Dimensions, Grid};
+use oxt_session::alacritty_terminal::index::{Column, Line, Point};
+use oxt_session::alacritty_terminal::term::cell::{Cell, Flags};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Link {
     /// A URL printed in the output.
@@ -41,6 +45,38 @@ fn token_at(line: &str, col: usize) -> Option<&str> {
     let from = chars[start].0;
     let to = chars.get(end + 1).map(|(i, _)| *i).unwrap_or(line.len());
     Some(line[from..to].trim_end_matches(['.', ':', '!', '?']))
+}
+
+/// The OSC 8 hyperlink at `point`, with the text it's drawn over: the run of
+/// cells around it with the same link, across rows the text wrapped onto.
+pub fn hyperlink_at(grid: &Grid<Cell>, point: Point) -> Option<Link> {
+    let link = grid[point].hyperlink()?;
+    let last = grid.last_column();
+    let wraps = |line: Line| grid[line][last].flags.contains(Flags::WRAPLINE);
+    let before = |p: Point| match p.column.0 {
+        0 if p.line > grid.topmost_line() && wraps(p.line - 1) => Some(Point::new(p.line - 1, last)),
+        0 => None,
+        c => Some(Point::new(p.line, Column(c - 1))),
+    };
+    let after = |p: Point| match p.column {
+        c if c < last => Some(Point::new(p.line, c + 1)),
+        _ if p.line < grid.bottommost_line() && wraps(p.line) => Some(Point::new(p.line + 1, Column(0))),
+        _ => None,
+    };
+    let same = |p: &Point| grid[*p].hyperlink().as_ref() == Some(&link);
+    let mut start = point;
+    while let Some(p) = before(start).filter(same) {
+        start = p;
+    }
+    let mut shown = String::new();
+    let mut at = Some(start);
+    while let Some(p) = at.filter(same) {
+        if !grid[p].flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
+            shown.push(grid[p].c);
+        }
+        at = after(p);
+    }
+    Some(Link::Hyperlink { uri: link.uri().to_owned(), shown })
 }
 
 /// Finds what was clicked. Paths resolve against `cwd` and must exist.
@@ -85,6 +121,18 @@ mod tests {
         for url in ["file:///tmp/run.command", "ftp://example.com/a"] {
             assert_eq!(link_at(&format!("see {url} here"), 6, None, None), Some(Link::Url(url.into())));
         }
+    }
+
+    #[test]
+    fn hyperlink_text_follows_a_wrap() {
+        let (tx, _rx) = async_channel::unbounded();
+        let mut engine = oxt_session::Engine::new(oxt_session::GridSize { rows: 3, cols: 10 }, 0, oxt_session::Listener::new(|_| {}, tx));
+        engine.advance(b"\x1b]8;;https://evil.example\x1b\\github.com/org/repo\x1b]8;;\x1b\\ more");
+        let expected = Some(Link::Hyperlink { uri: "https://evil.example".into(), shown: "github.com/org/repo".into() });
+        for (line, col) in [(0, 3), (1, 2)] {
+            assert_eq!(hyperlink_at(engine.term.grid(), Point::new(Line(line), Column(col))), expected, "clicked {line}:{col}");
+        }
+        assert_eq!(hyperlink_at(engine.term.grid(), Point::new(Line(1), Column(9))), None);
     }
 
     #[test]

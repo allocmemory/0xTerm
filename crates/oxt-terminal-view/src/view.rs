@@ -250,20 +250,8 @@ impl TerminalView {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let engine = self.session.lock();
         let grid = engine.term.grid();
-        if let Some(link) = grid[point].hyperlink() {
-            // The text it's drawn over: the run of cells on this row with the same link.
-            let row = &grid[point.line];
-            let same = |c: usize| row[Column(c)].hyperlink().as_ref() == Some(&link);
-            let (mut start, mut end) = (point.column.0, point.column.0);
-            while start > 0 && same(start - 1) {
-                start -= 1;
-            }
-            while end < grid.last_column().0 && same(end + 1) {
-                end += 1;
-            }
-            let shown =
-                (start..=end).map(|c| &row[Column(c)]).filter(|cell| !cell.flags.contains(Flags::WIDE_CHAR_SPACER)).map(|cell| cell.c).collect();
-            return Some(Link::Hyperlink { uri: link.uri().to_owned(), shown });
+        if let Some(link) = links::hyperlink_at(grid, point) {
+            return Some(link);
         }
         // A long path may wrap across rows; join the whole logical line.
         let wrapped = |line: Line| grid[line][grid.last_column()].flags.contains(Flags::WRAPLINE);
