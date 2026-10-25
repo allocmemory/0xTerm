@@ -404,7 +404,7 @@ impl Viewer {
                                 .text_color(rgba(chrome.dim))
                                 .child(match err {
                                     // The source may be what made it too large; don't lay it out.
-                                    mermaid::RenderError::TooLarge(_) => format!("Mermaid: {err}"),
+                                    mermaid::RenderError::TooLarge(_) | mermaid::RenderError::TookTooLong(_) => format!("Mermaid: {err}"),
                                     mermaid::RenderError::Invalid(_) => format!("Mermaid: {err}\n\n{source}"),
                                 }),
                         );
