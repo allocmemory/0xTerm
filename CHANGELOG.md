@@ -3,6 +3,13 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+
+- Settings… (⌘,), Minimize (⌘M), Zoom and Toggle Full Screen work; in 0.2.0
+  they did nothing while a window was focused.
+
 ## [0.2.0] - 2026-10-25
 
 ### Added
