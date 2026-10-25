@@ -67,15 +67,17 @@ it, and drag 0xTerm to Applications.
 **Requirements:** a Mac with Apple Silicon, running macOS 13 or later.
 0xTerm is built and tested on the current macOS.
 
-**First launch:** releases aren't notarized by Apple yet, so macOS blocks the
-first launch. Do one of these:
+Releases are signed with a Developer ID and notarized by Apple, so 0xTerm
+opens like any other app. It keeps itself up to date: the second time you open
+it, it asks whether to check for updates automatically, and
+**0xTerm → Check for Updates…** checks now.
 
-- Open 0xTerm once and dismiss the warning. Then go to **System Settings →
-  Privacy & Security**, scroll down, and click **Open Anyway** next to
-  0xTerm.
-- Or, in a terminal: `xattr -dr com.apple.quarantine /Applications/0xTerm.app`
+**Coming from 0.1.x:** those releases weren't notarized and can't update
+themselves, so install the new version by hand once. macOS asks again for any
+permission you gave the old one, such as access to Documents.
 
-After that it opens like any other app.
+Drop a folder on the Dock icon, or use **Open With → 0xTerm** in Finder, to
+open a window there. A text file opens in the viewer.
 
 ## Shortcuts
 
@@ -93,6 +95,9 @@ After that it opens like any other app.
 | ⌘F | find in the open file |
 | ⌘K | clear the terminal |
 | ⌘C / ⌘V / ⌘A | copy / paste / select all |
+| ⌘, | open the config file |
+| ⌘M / ⌃⌘F | minimize / full screen |
+| ⌘H / ⌥⌘H | hide 0xTerm / hide the other apps |
 | ⌘-click | open a `path:line` or a URL |
 
 Right-click a pane to split or close it. Right-click the file tree for
@@ -101,6 +106,8 @@ Right-click a pane to split or close it. Right-click the file tree for
 ## Configuration
 
 0xTerm reads `~/.config/0xterm/config.toml` (or `$XDG_CONFIG_HOME/0xterm/`).
+**0xTerm → Settings…** (⌘,) shows it in the viewer, and creates it the first
+time.
 Every key is optional; anything you leave out keeps the default shown here.
 Changes apply to open windows as soon as you save.
 
@@ -142,13 +149,18 @@ You need:
 ```sh
 cargo run -p oxterm                 # run a debug build
 cargo test --workspace              # run the tests
-packaging/bundle.sh                 # build dist/0xTerm.app (release, ad-hoc signed)
+packaging/bundle.sh                 # build dist/0xTerm.app (release, ad-hoc signed, Sparkle embedded)
 packaging/dmg.sh                    # build dist/0xTerm-<version>.dmg
 packaging/install.sh                # build and install to /Applications, replacing the old copy
 ```
 
 `SIGN_ID="Developer ID Application: …" packaging/bundle.sh` signs with the
-hardened runtime instead, ready for notarization.
+hardened runtime instead, ready for notarization. `packaging/release.sh` does
+the whole release: Developer ID signature, notarization and stapling for the
+app and the DMG, the `.sha256`, and a new entry in the
+[Sparkle](https://sparkle-project.org) update feed, `appcast.xml` on
+0xterm.org. It needs the maintainer's certificate, notarytool profile and
+update-signing key in the keychain.
 
 ## How it's built
 
@@ -175,19 +187,20 @@ such as "open this file at this line" or "the working folder changed".
 | [`oxt-window`](crates/oxt-window) | tabs, splits, panes |
 | [`oxt-toolbelt`](crates/oxt-toolbelt) | file tree, folder search, viewer, Markdown and Mermaid |
 | [`oxt-config`](crates/oxt-config) | config file and themes |
-| [`app`](app) | the `oxterm` binary: menus, windows, config reload |
+| [`app`](app) | the `oxterm` binary: menus, windows, config reload, updates |
 
 0xTerm stands on [GPUI](https://www.gpui.rs) and
 [gpui-component](https://github.com/longbridge/gpui-component) for the UI,
 [alacritty_terminal](https://github.com/alacritty/alacritty) for terminal
 emulation, [merman](https://github.com/Latias94/merman) and
-[resvg](https://github.com/linebender/resvg) for diagrams, and ripgrep's
-`ignore` and `grep` crates for search.
+[resvg](https://github.com/linebender/resvg) for diagrams, ripgrep's
+`ignore` and `grep` crates for search, and
+[Sparkle](https://sparkle-project.org) for updates.
 
 ## Not in v0.1
 
-Profiles, a settings window, tmux and SSH integration, triggers, scripting
-and auto-update. There are no AI features, and none are planned.
+Profiles, a settings window, tmux and SSH integration, triggers and
+scripting. There are no AI features, and none are planned.
 
 ## Contributing
 
