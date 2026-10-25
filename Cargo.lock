@@ -5281,12 +5281,15 @@ dependencies = [
  "async-channel",
  "gpui-kit",
  "notify",
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
  "oxt-config",
  "oxt-session",
  "oxt-task",
  "oxt-terminal-view",
  "oxt-toolbelt",
  "oxt-window",
+ "url",
 ]
 
 [[package]]

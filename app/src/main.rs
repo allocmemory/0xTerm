@@ -1,15 +1,27 @@
 //! 0xTerm: start the app, install the menu bar, open the first window.
 
 mod config_watch;
+mod macos;
 mod menus;
+
+use std::path::PathBuf;
 
 use gpui_kit::*;
 use oxt_config::Config;
+use oxt_toolbelt::OpenRequest;
 use oxt_window::Workspace;
 
-actions!(oxterm, [Quit, NewWindow]);
+actions!(oxterm, [Quit, NewWindow, OpenSettings]);
 
-fn open_workspace(cx: &mut App) {
+/// Written by Settings… when there's no config file yet.
+const STARTER_CONFIG: &str = "\
+# 0xTerm settings. Anything you set here overrides the defaults, and every
+# open window picks it up when you save. The defaults, with notes:
+# https://github.com/allocmemory/0xTerm/blob/main/crates/oxt-config/src/default.toml
+";
+
+/// Opens a window whose shell and file tree start in `cwd` (home when `None`).
+fn open_workspace(cwd: Option<PathBuf>, cx: &mut App) -> Option<(AnyWindowHandle, Entity<Workspace>)> {
     let (config, error) = Config::load();
     if let Some(error) = error {
         eprintln!("0xTerm: config error, using defaults: {error}");
@@ -28,7 +40,7 @@ fn open_workspace(cx: &mut App) {
         ..Default::default()
     };
     let opened = gpui_kit::open_window(options, cx, |window, cx| {
-        let workspace = cx.new(|cx| Workspace::new(config, None, window, cx));
+        let workspace = cx.new(|cx| Workspace::new(config, cwd, window, cx));
         config_watch::register(window.window_handle(), &workspace, cx);
         // Debug builds: OXTERM_TYPE is typed into the first pane, for scripted checks.
         #[cfg(debug_assertions)]
@@ -77,8 +89,40 @@ fn open_workspace(cx: &mut App) {
         }
         workspace
     });
-    if let Err(err) = opened {
-        eprintln!("0xTerm: couldn't open a window: {err}");
+    opened.inspect_err(|err| eprintln!("0xTerm: couldn't open a window: {err}")).ok()
+}
+
+fn open_in_viewer(window: AnyWindowHandle, workspace: &Entity<Workspace>, path: PathBuf, cx: &mut App) {
+    let _ = window.update(cx, |_, window, cx| workspace.update(cx, |ws, cx| ws.open(OpenRequest::path(path), window, cx)));
+}
+
+/// Folders and files opened from Finder or dropped on the Dock icon: a folder
+/// gets a window that starts there, a file opens in the viewer of a window
+/// that starts in its folder.
+fn open_urls(urls: Vec<String>, cx: &mut App) {
+    for url in urls {
+        let Some(path) = url::Url::parse(&url).ok().and_then(|url| url.to_file_path().ok()) else { continue };
+        if path.is_dir() {
+            open_workspace(Some(path), cx);
+        } else if let Some((window, workspace)) = open_workspace(path.parent().map(PathBuf::from), cx) {
+            open_in_viewer(window, &workspace, path, cx);
+        }
+    }
+    cx.activate(true);
+}
+
+/// Shows config.toml in the viewer, creating a starter file the first time.
+fn open_settings(cx: &mut App) {
+    let Some(path) = Config::path() else { return };
+    if !path.exists() {
+        let written = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(&path, STARTER_CONFIG));
+        if let Err(err) = written {
+            eprintln!("0xTerm: couldn't create {}: {err}", path.display());
+            return;
+        }
+    }
+    if let Some((window, workspace)) = config_watch::active(cx).or_else(|| open_workspace(None, cx)) {
+        open_in_viewer(window, &workspace, path, cx);
     }
 }
 
@@ -93,20 +137,39 @@ fn main() {
     // Clicking the Dock icon with no windows open opens one.
     app.on_reopen(|cx| {
         if cx.windows().is_empty() {
-            open_workspace(cx);
+            open_workspace(None, cx);
         }
     });
+    // macOS hands over opened folders and files before the app has finished
+    // launching, so they wait here until the app can open windows.
+    let (opened_tx, opened_rx) = async_channel::unbounded::<Vec<String>>();
+    app.on_open_urls(move |urls| _ = opened_tx.try_send(urls));
     app.run(|cx| {
         gpui_kit::init(cx);
         oxt_terminal_view::bind_keys(cx);
         oxt_window::bind_keys(cx);
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-n", NewWindow, None)]);
         cx.on_action(|_: &Quit, cx| cx.quit());
-        cx.on_action(|_: &NewWindow, cx| open_workspace(cx));
+        cx.on_action(|_: &NewWindow, cx| _ = open_workspace(None, cx));
+        cx.on_action(|_: &OpenSettings, cx| open_settings(cx));
+        cx.bind_keys([KeyBinding::new("cmd-,", OpenSettings, None)]);
+        macos::start_updater();
         menus::install(cx);
         config_watch::watch(cx);
 
-        open_workspace(cx);
+        // Launched by opening a folder or file: open that instead of a window at home.
+        let launch_urls: Vec<String> = std::iter::from_fn(|| opened_rx.try_recv().ok()).flatten().collect();
+        if launch_urls.is_empty() {
+            open_workspace(None, cx);
+        } else {
+            open_urls(launch_urls, cx);
+        }
+        cx.spawn(async move |cx| {
+            while let Ok(urls) = opened_rx.recv().await {
+                cx.update(|cx| open_urls(urls, cx));
+            }
+        })
+        .detach();
         if !background_launch() {
             cx.activate(true);
         }

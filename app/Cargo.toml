@@ -16,6 +16,8 @@ path = "src/main.rs"
 [dependencies]
 async-channel.workspace = true
 notify.workspace = true
+objc2.workspace = true
+objc2-foundation.workspace = true
 gpui-kit.workspace = true
 oxt-config.workspace = true
 oxt-session.workspace = true
@@ -23,3 +25,4 @@ oxt-task.workspace = true
 oxt-terminal-view.workspace = true
 oxt-toolbelt.workspace = true
 oxt-window.workspace = true
+url.workspace = true
