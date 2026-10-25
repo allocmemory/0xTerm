@@ -190,3 +190,113 @@ fn huge_escape_sequence_memory() {
     huge_osc(&mut e, 512);
     assert_eq!(row(&e, 0), "after");
 }
+
+#[test]
+fn oversized_escape_sequences_never_reach_the_parser() {
+    // vte stays in its escape state through control bytes, DEL, high bytes and
+    // a repeated ESC, so each of these still opens an OSC (a title).
+    let prefixes: [&[u8]; 5] = [b"\x1b]0;", b"\x1b\x00]0;", b"\x1b\x7f]0;", b"\x1b\xc3]0;", b"\x1b]\x1b\x1b]0;"];
+    for prefix in prefixes {
+        let (mut e, _, rx) = engine(4, 20);
+        e.advance(prefix);
+        let chunk = vec![b'x'; 64 * 1024];
+        for _ in 0..64 {
+            e.advance(&chunk);
+        }
+        e.advance(b"\x07after");
+        let long_title = rx.try_iter_pending().find_map(|ev| match ev {
+            SessionEvent::Title(Some(t)) if t.len() > 4096 => Some(t.len()),
+            _ => None,
+        });
+        assert_eq!(long_title, None, "{prefix:?}: an oversized sequence reached the parser");
+        assert_eq!(row(&e, 0), "after", "{prefix:?}");
+    }
+}
+
+/// The scanner in front of the parser must not change what normal output
+/// does: random streams of escapes, control bytes and text, split at random,
+/// give the same screen, cursor, titles and copies as vte alone.
+#[test]
+fn the_scanner_changes_nothing_for_normal_output() {
+    use alacritty_terminal::term::{Config, Term};
+    use alacritty_terminal::vte::ansi::Processor;
+
+    let alphabet: &[&[u8]] = &[
+        b"\x1b",
+        b"]",
+        b"[",
+        b"\\",
+        b"\x07",
+        b"\x18",
+        b"\x1a",
+        b"\x00",
+        b"\n",
+        b"\r",
+        b"a",
+        b"Z",
+        b"0",
+        b"2",
+        b";",
+        b"m",
+        b"1",
+        b"\x7f",
+        "é".as_bytes(),
+        b"\xc3",
+        b"]0;t",
+        b"]52;c;aGk=",
+        b"]8;;https://x\x1b\\",
+        b"[31m",
+        b"[2J",
+        b"P",
+        b"X",
+        b"_",
+        b"(B",
+    ];
+    let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = move |n: usize| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % n as u64) as usize
+    };
+    let size = GridSize { rows: 4, cols: 12 };
+    for case in 0..3000 {
+        let mut stream = Vec::new();
+        for _ in 0..next(60) {
+            stream.extend_from_slice(alphabet[next(alphabet.len())]);
+        }
+        // Ends any sequence, so neither side is left waiting for more bytes:
+        // the scanner holds an ESC until it knows what follows.
+        stream.push(0x18);
+        let (mut ours, _, ours_rx) = engine(size.rows, size.cols);
+        let (tx, theirs_rx) = async_channel::unbounded();
+        let mut term = Term::new(Config { scrolling_history: 100, kitty_keyboard: true, ..Config::default() }, &size, Listener::new(|_| {}, tx));
+        let mut parser: Processor = Processor::new();
+        // Both get the same chunks: vte's own handling of a UTF-8 character
+        // split between reads isn't what this compares.
+        let mut rest = &stream[..];
+        while !rest.is_empty() {
+            let (chunk, tail) = rest.split_at(1 + next(rest.len()));
+            ours.advance(chunk);
+            parser.advance(&mut term, chunk);
+            rest = tail;
+        }
+        let screen = |t: &Term<Listener>| {
+            let grid = t.grid();
+            let rows: Vec<String> =
+                (0..grid.screen_lines() as i32).map(|l| (0..grid.columns()).map(|c| grid[Line(l)][Column(c)].c).collect()).collect();
+            (rows, grid.cursor.point)
+        };
+        let seen = |rx: &async_channel::Receiver<SessionEvent>| {
+            rx.try_iter_pending()
+                .filter_map(|ev| match ev {
+                    SessionEvent::Title(t) => Some(format!("title {t:?}")),
+                    SessionEvent::Copy(t) => Some(format!("copy {t:?}")),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(screen(&ours.term), screen(&term), "case {case}: {stream:?}");
+        assert_eq!(seen(&ours_rx), seen(&theirs_rx), "case {case}: {stream:?}");
+    }
+}
