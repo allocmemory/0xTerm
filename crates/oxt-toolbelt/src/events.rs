@@ -33,36 +33,43 @@ pub enum ToolbeltEvent {
 #[derive(Clone, Debug)]
 pub struct DraggedPath(pub PathBuf);
 
-/// The quoting a shell reads back. Only names with control characters differ.
+/// The quoting a shell reads back.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Shell {
-    /// zsh, bash, sh, ksh.
-    #[default]
+    /// zsh, bash, sh, ksh, dash.
     Posix,
     Fish,
+    /// Any other shell (nushell, tcsh), or one we can't tell. Their quoting
+    /// differs (nushell runs `(…)` inside `$'…'`, tcsh expands `!` inside
+    /// `'…'`), so only names with nothing to escape are typed into them.
+    #[default]
+    Other,
 }
 
 impl Shell {
     /// The shell a process name (`zsh`, `-fish`) belongs to.
     pub fn from_process(name: &str) -> Self {
-        if name.trim_start_matches('-') == "fish" { Shell::Fish } else { Shell::Posix }
+        match name.trim_start_matches('-') {
+            "zsh" | "bash" | "sh" | "ksh" | "mksh" | "dash" => Shell::Posix,
+            "fish" => Shell::Fish,
+            _ => Shell::Other,
+        }
     }
 }
 
 /// A path quoted for the shell, only when it needs it: `/tmp/a` or `'/tmp/a b'`.
-pub fn shell_quote(path: &std::path::Path, shell: Shell) -> String {
+/// `None` when this shell can't be given the name safely.
+pub fn shell_quote(path: &std::path::Path, shell: Shell) -> Option<String> {
     let s = path.to_string_lossy();
     let safe = |c: char| c.is_ascii_alphanumeric() || "/._-+~,@%:".contains(c);
     if !s.is_empty() && s.chars().all(safe) {
-        return s.into_owned();
-    }
-    if !s.chars().any(char::is_control) {
-        return format!("'{}'", s.replace('\'', r"'\''"));
+        return Some(s.into_owned());
     }
     // A control character typed raw is a keystroke (Ctrl-U, Enter), not part of
     // the name, so it goes as an escape the shell reads back.
     let mut out = String::new();
     match shell {
+        Shell::Posix if !s.chars().any(char::is_control) => out = format!("'{}'", s.replace('\'', r"'\''")),
         // `$'…'`, which zsh, bash, sh and ksh read. Three-digit octal, because
         // ksh's `\x` eats every hex digit after it; quotes as octal too, so a
         // shell without `$'…'` (dash) sees one plain string.
@@ -77,7 +84,8 @@ pub fn shell_quote(path: &std::path::Path, shell: Shell) -> String {
             }
             out.push('\'');
         }
-        // fish has no `$'…'`: quoted runs, with `\uXXXX` between them.
+        // In fish, `\'` and `\\` are escapes even inside single quotes, so
+        // every name gets fish's own form: quoted runs, `\uXXXX` between them.
         Shell::Fish => {
             out.push('\'');
             for c in s.chars() {
@@ -89,8 +97,10 @@ pub fn shell_quote(path: &std::path::Path, shell: Shell) -> String {
             }
             out.push('\'');
         }
+        Shell::Other if s.chars().any(|c| c.is_control() || matches!(c, '\'' | '\\' | '!')) => return None,
+        Shell::Other => out = format!("'{s}'"),
     }
-    out
+    Some(out)
 }
 
 #[cfg(test)]
@@ -99,25 +109,41 @@ mod tests {
 
     #[test]
     fn quoting() {
-        assert_eq!(shell_quote("/tmp/a.txt".as_ref(), Shell::Posix), "/tmp/a.txt");
-        assert_eq!(shell_quote("/tmp/a b".as_ref(), Shell::Posix), "'/tmp/a b'");
-        assert_eq!(shell_quote("/tmp/it's".as_ref(), Shell::Posix), r"'/tmp/it'\''s'");
+        assert_eq!(shell_quote("/tmp/a.txt".as_ref(), Shell::Posix).unwrap(), "/tmp/a.txt");
+        assert_eq!(shell_quote("/tmp/a b".as_ref(), Shell::Posix).unwrap(), "'/tmp/a b'");
+        assert_eq!(shell_quote("/tmp/it's".as_ref(), Shell::Posix).unwrap(), r"'/tmp/it'\''s'");
     }
 
     #[test]
     fn control_characters_never_reach_the_shell_raw() {
         for shell in [Shell::Posix, Shell::Fish] {
-            let quoted = shell_quote("/tmp/docs\x15cd;touch pwned\n".as_ref(), shell);
+            let quoted = shell_quote("/tmp/docs\x15cd;touch pwned\n".as_ref(), shell).unwrap();
             assert!(!quoted.chars().any(char::is_control), "{quoted:?}");
-            assert!(!shell_quote("/tmp/a\u{9b}b".as_ref(), shell).chars().any(char::is_control));
+            assert!(!shell_quote("/tmp/a\u{9b}b".as_ref(), shell).unwrap().chars().any(char::is_control));
         }
-        assert_eq!(shell_quote("/tmp/it's\x15".as_ref(), Shell::Posix), r"$'/tmp/it\047s\025'");
-        assert_eq!(shell_quote("/tmp/it's\x15".as_ref(), Shell::Fish), r"'/tmp/it\'s'\u0015''");
+        assert_eq!(shell_quote("/tmp/it's\x15".as_ref(), Shell::Posix).unwrap(), r"$'/tmp/it\047s\025'");
+        assert_eq!(shell_quote("/tmp/it's\x15".as_ref(), Shell::Fish).unwrap(), r"'/tmp/it\'s'\u0015''");
+    }
+
+    #[test]
+    fn fish_gets_its_own_quoting_for_every_name() {
+        assert_eq!(shell_quote(r"/tmp/x\';touch pwned;#".as_ref(), Shell::Fish).unwrap(), r"'/tmp/x\\\';touch pwned;#'");
+        assert_eq!(shell_quote("/tmp/a b".as_ref(), Shell::Fish).unwrap(), "'/tmp/a b'");
+    }
+
+    #[test]
+    fn other_shells_only_get_names_with_nothing_to_escape() {
+        assert_eq!(shell_quote("/tmp/a b (1)".as_ref(), Shell::Other).unwrap(), "'/tmp/a b (1)'");
+        for name in ["/tmp/a\x01(open -a Calculator)", "/tmp/it's", r"/tmp/a\b", "/tmp/a!b"] {
+            assert_eq!(shell_quote(name.as_ref(), Shell::Other), None, "{name:?}");
+        }
     }
 
     #[test]
     fn shell_from_process_name() {
         assert_eq!(Shell::from_process("-fish"), Shell::Fish);
         assert_eq!(Shell::from_process("zsh"), Shell::Posix);
+        assert_eq!(Shell::from_process("nu"), Shell::Other);
+        assert_eq!(Shell::from_process("tcsh"), Shell::Other);
     }
 }

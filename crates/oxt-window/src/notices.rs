@@ -1,5 +1,8 @@
 //! What the window tells you about something a program did behind your back.
 
+/// When a path's name can't be typed safely into the shell in the pane.
+pub const UNSAFE_PATH: &str = "This name has characters this shell can't be given safely, so it wasn't typed in.";
+
 /// After a program copied text to the clipboard (OSC 52).
 pub fn copied(chars: usize) -> String {
     let unit = if chars == 1 { "character" } else { "characters" };

@@ -82,6 +82,16 @@ enum Drag {
     Viewer,
 }
 
+/// A path quoted for the shell reading the pane, or `None` and a notice
+/// when that shell can't be given the name safely.
+fn quote_for(pane: &Pane, path: &std::path::Path, window: &mut Window, cx: &mut App) -> Option<String> {
+    let quoted = shell_quote(path, pane.shell(cx));
+    if quoted.is_none() {
+        window.push_notification(Notification::warning(notices::UNSAFE_PATH), cx);
+    }
+    quoted
+}
+
 /// Identifies the clipboard notice, so a new one replaces the last.
 struct ClipboardNotice;
 
@@ -377,22 +387,23 @@ impl Workspace {
                 cx.notify();
             }
             ToolbeltEvent::InsertPath(path) => {
-                if let Some(pane) = self.active_pane() {
-                    let text = format!("{} ", shell_quote(path, pane.shell(cx)));
-                    pane.view.update(cx, |view, cx| view.insert_text(&text, cx));
+                if let Some(pane) = self.active_pane()
+                    && let Some(quoted) = quote_for(pane, path, window, cx)
+                {
+                    pane.view.update(cx, |view, cx| view.insert_text(&format!("{quoted} "), cx));
                 }
                 self.focus_active(window, cx);
             }
             ToolbeltEvent::CdHere(dir) => {
-                if let Some(pane) = self.active_pane() {
-                    let shell = pane.shell(cx);
-                    let view = pane.view.read(cx);
-                    // Only an idle shell gets a command typed into it.
-                    if !view.session().is_busy() {
-                        // Pasted, then Enter on its own: inside a paste it wouldn't run.
-                        view.session().paste(&format!("cd {}", shell_quote(dir, shell)));
-                        view.session().write(*b"\r");
-                    }
+                // Only an idle shell gets a command typed into it.
+                if let Some(pane) = self.active_pane()
+                    && !pane.view.read(cx).session().is_busy()
+                    && let Some(quoted) = quote_for(pane, dir, window, cx)
+                {
+                    let session = pane.view.read(cx).session();
+                    // Pasted, then Enter on its own: inside a paste it wouldn't run.
+                    session.paste(&format!("cd {quoted}"));
+                    session.write(*b"\r");
                 }
                 self.focus_active(window, cx);
             }
@@ -432,8 +443,10 @@ impl Workspace {
     pub(crate) fn drop_path(&mut self, id: PaneId, path: &std::path::Path, window: &mut Window, cx: &mut Context<Self>) {
         let Some(tab) = self.tabs.iter_mut().find(|t| t.panes.contains_key(&id)) else { return };
         tab.active = id;
-        let text = format!("{} ", shell_quote(path, tab.panes[&id].shell(cx)));
-        tab.panes[&id].view.update(cx, |view, cx| view.insert_text(&text, cx));
+        let pane = &tab.panes[&id];
+        if let Some(quoted) = quote_for(pane, path, window, cx) {
+            pane.view.update(cx, |view, cx| view.insert_text(&format!("{quoted} "), cx));
+        }
         self.focus_active(window, cx);
     }
 
