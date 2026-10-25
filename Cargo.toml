@@ -31,10 +31,14 @@ libc = "0.2"
 # No ELK layout: merman-elk-layered is EPL-2.0, which GPL-3.0 code can't link.
 merman = { version = "0.8", default-features = false, features = ["all-diagrams", "complete-svg"] }
 notify = "8.2"
+# Sparkle and the standard About panel are reached through the Objective-C runtime.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString"] }
 regex-syntax = "0.8"
 resvg = "0.48"
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+url = "2"
 
 # Dependencies optimized even in debug builds: an unoptimized parser and text
 # shaper make a debug terminal crawl under heavy output.

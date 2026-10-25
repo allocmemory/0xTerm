@@ -3,6 +3,21 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+
+- Releases are signed with a Developer ID and notarized by Apple, so macOS
+  opens 0xTerm without a warning.
+- Automatic updates through Sparkle, and **0xTerm → Check for Updates…**.
+- The standard Mac menus: About 0xTerm, Settings… (⌘,, opens the config
+  file), Services, Hide (⌘H), Hide Others (⌥⌘H), Show All, Minimize (⌘M),
+  Zoom, Toggle Full Screen (⌃⌘F) and a Help menu.
+- Drop a folder on the Dock icon, or use Open With in Finder, to open a
+  window there; a text file opens in the viewer.
+- Programs run in 0xTerm can ask for the camera, the microphone, Apple
+  events and protected folders, with a prompt that names 0xTerm.
+
 ## [0.1.1] - 2026-10-15
 
 A bug-fix release.

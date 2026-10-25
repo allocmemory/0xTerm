@@ -23,6 +23,13 @@ pub fn register(window: AnyWindowHandle, workspace: &Entity<Workspace>, cx: &mut
     workspaces.0.push((window, workspace.downgrade()));
 }
 
+/// The focused window's workspace, if a 0xTerm window is focused.
+pub fn active(cx: &App) -> Option<(AnyWindowHandle, Entity<Workspace>)> {
+    let active = cx.active_window()?;
+    let workspaces = cx.try_global::<Workspaces>()?;
+    workspaces.0.iter().find(|(window, _)| *window == active).and_then(|(window, ws)| Some((*window, ws.upgrade()?)))
+}
+
 pub fn watch(cx: &mut App) {
     let Some(path) = Config::path() else { return };
     let Some(dir) = path.parent().map(|d| d.to_path_buf()) else { return };
