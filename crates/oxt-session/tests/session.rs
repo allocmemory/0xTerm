@@ -159,3 +159,34 @@ fn clipboard_writes_have_a_size_limit() {
     e.advance(over.as_bytes());
     assert!(rx.try_iter_pending().any(|ev| matches!(ev, SessionEvent::CopyBlocked(n) if n == (1024 * 1024 / 3 + 1) * 3)));
 }
+
+/// An escape sequence that never ends, e.g. `cat` of a hostile file.
+fn huge_osc(e: &mut Engine, mib: usize) {
+    e.advance(b"\x1b]0;");
+    let chunk = vec![b'x'; 64 * 1024];
+    for _ in 0..mib * 16 {
+        e.advance(&chunk);
+    }
+    e.advance(b"\x07after");
+}
+
+#[test]
+fn oversized_escape_sequence_is_dropped_and_output_resumes() {
+    let (mut e, _, _) = engine(4, 20);
+    huge_osc(&mut e, 4);
+    assert_eq!(row(&e, 0), "after");
+    // A clipboard write near its 1 MiB limit is still a whole sequence.
+    let (mut e, _, rx) = engine(4, 20);
+    let copy = format!("\x1b]52;c;{}\x07", "QUFB".repeat(1024 * 1024 / 3 - 1));
+    e.advance(copy.as_bytes());
+    assert!(rx.try_iter_pending().any(|ev| matches!(ev, SessionEvent::Copy(_))));
+}
+
+/// Run in release under `/usr/bin/time -l` to see peak memory.
+#[test]
+#[ignore]
+fn huge_escape_sequence_memory() {
+    let (mut e, _, _) = engine(4, 20);
+    huge_osc(&mut e, 512);
+    assert_eq!(row(&e, 0), "after");
+}
