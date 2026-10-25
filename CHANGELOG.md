@@ -3,7 +3,7 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.2.1] - 2026-10-25
 
 ### Fixed
 
