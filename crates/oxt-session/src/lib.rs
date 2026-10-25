@@ -23,7 +23,7 @@ use alacritty_terminal::term::TermMode;
 use oxt_task::{Command, Process, Size, Task};
 
 pub use input::{Key, Mods, MouseAction, MouseButton};
-pub use term::{Engine, GridSize, Listener, Palette};
+pub use term::{Engine, GridSize, Listener, MAX_COPY, Palette};
 
 /// What a session tells the UI. Arrives on the receiver from [`Session::spawn`].
 #[derive(Debug, Clone)]
@@ -35,6 +35,8 @@ pub enum SessionEvent {
     Bell,
     /// The program asked to copy text (OSC 52).
     Copy(String),
+    /// The program asked to copy this many bytes, over the limit; nothing was copied.
+    CopyBlocked(usize),
     /// The shell reported its directory (OSC 7).
     Cwd(PathBuf),
     /// A synchronized update started; call [`Session::flush_sync`] at this time

@@ -138,3 +138,24 @@ fn real_shell_end_to_end() {
     }
     panic!("shell didn't exit");
 }
+
+#[test]
+fn clipboard_writes_have_a_size_limit() {
+    let (mut e, _, rx) = engine(4, 20);
+    e.advance(b"\x1b]52;c;aGk=\x07"); // "hi"
+    assert!(rx.try_iter_pending().any(|ev| matches!(ev, SessionEvent::Copy(t) if t == "hi")));
+
+    // "QUFB" is base64 for "AAA": 8 MiB of text, more than anyone means to copy.
+    let big = format!("\x1b]52;c;{}\x07", "QUFB".repeat(8 * 1024 * 1024 / 3));
+    e.advance(big.as_bytes());
+    let events: Vec<_> = rx.try_iter_pending().collect();
+    assert!(!events.iter().any(|ev| matches!(ev, SessionEvent::Copy(_))), "an 8 MiB write reached the clipboard");
+    // Blocked, not silently: the UI tells the user, with about the size.
+    assert!(events.iter().any(|ev| matches!(ev, SessionEvent::CopyBlocked(n) if n.abs_diff(8 * 1024 * 1024) < 1024)), "{events:?}");
+
+    // Between the limit and the length an escape sequence may have, the parser
+    // sees it whole and reports the exact size.
+    let over = format!("\x1b]52;c;{}\x07", "QUFB".repeat(1024 * 1024 / 3 + 1));
+    e.advance(over.as_bytes());
+    assert!(rx.try_iter_pending().any(|ev| matches!(ev, SessionEvent::CopyBlocked(n) if n == (1024 * 1024 / 3 + 1) * 3)));
+}

@@ -48,6 +48,10 @@ pub enum TerminalEvent {
     /// The shell reported a new directory (OSC 7).
     CwdChanged(PathBuf),
     Bell,
+    /// A program copied this many characters to the clipboard (OSC 52).
+    Copied(usize),
+    /// A program tried to copy this many bytes, over the limit.
+    CopyBlocked(usize),
     Focused,
     Exited,
     /// ⌘-click on a file path in the output.
@@ -176,7 +180,12 @@ impl TerminalView {
             }
             SessionEvent::Cwd(dir) => cx.emit(TerminalEvent::CwdChanged(dir)),
             SessionEvent::Bell => cx.emit(TerminalEvent::Bell),
-            SessionEvent::Copy(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
+            SessionEvent::Copy(text) => {
+                let chars = text.chars().count();
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                cx.emit(TerminalEvent::Copied(chars));
+            }
+            SessionEvent::CopyBlocked(bytes) => cx.emit(TerminalEvent::CopyBlocked(bytes)),
             SessionEvent::SyncPending(deadline) => {
                 cx.spawn(async move |this, cx| {
                     cx.background_executor().timer(deadline.saturating_duration_since(Instant::now())).await;

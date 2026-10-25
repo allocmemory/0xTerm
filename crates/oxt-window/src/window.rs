@@ -7,13 +7,16 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::notification::Notification;
 use gpui_kit::*;
 use oxt_config::{Chrome, Config};
-use oxt_session::SessionOptions;
+use oxt_session::{MAX_COPY, SessionOptions};
 use oxt_task::Command;
 use oxt_terminal_view::{TerminalEvent, TerminalStyle, TerminalView};
 use oxt_toolbelt::{Sidebar, ToolbeltEvent, Viewer, shell_quote};
 
+use crate::notices;
 use crate::pane::{Pane, PaneId, render_pane};
 use crate::split::{Axis, Node};
 use crate::tab_bar::render_title_row;
@@ -77,6 +80,9 @@ enum Drag {
     Sidebar,
     Viewer,
 }
+
+/// Identifies the clipboard notice, so a new one replaces the last.
+struct ClipboardNotice;
 
 pub struct Workspace {
     config: Config,
@@ -209,6 +215,11 @@ impl Workspace {
             }
             TerminalEvent::TitleChanged | TerminalEvent::CwdChanged(_) => self.refresh_labels(window, cx),
             TerminalEvent::Bell => {}
+            // One notice at a time: a later copy replaces it instead of stacking (vim and tmux yanks).
+            TerminalEvent::Copied(chars) => window.push_notification(Notification::info(notices::copied(*chars)).id::<ClipboardNotice>(), cx),
+            TerminalEvent::CopyBlocked(bytes) => {
+                window.push_notification(Notification::warning(notices::copy_blocked(*bytes, MAX_COPY)).id::<ClipboardNotice>(), cx)
+            }
             TerminalEvent::OpenFile { path, line } => {
                 let request = oxt_toolbelt::OpenRequest { path: path.clone(), line: *line, find: None };
                 self.open(request, window, cx);
