@@ -20,3 +20,7 @@ ignore.workspace = true
 merman.workspace = true
 regex-syntax.workspace = true
 resvg.workspace = true
+
+[dev-dependencies]
+oxt-session.workspace = true
+oxt-task.workspace = true

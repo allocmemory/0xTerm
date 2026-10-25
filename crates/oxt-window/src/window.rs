@@ -361,17 +361,20 @@ impl Workspace {
             }
             ToolbeltEvent::InsertPath(path) => {
                 if let Some(pane) = self.active_pane() {
-                    let text = format!("{} ", shell_quote(path));
+                    let text = format!("{} ", shell_quote(path, pane.shell(cx)));
                     pane.view.update(cx, |view, cx| view.insert_text(&text, cx));
                 }
                 self.focus_active(window, cx);
             }
             ToolbeltEvent::CdHere(dir) => {
                 if let Some(pane) = self.active_pane() {
+                    let shell = pane.shell(cx);
                     let view = pane.view.read(cx);
                     // Only an idle shell gets a command typed into it.
                     if !view.session().is_busy() {
-                        view.session().type_text(&format!("cd {}\n", shell_quote(dir)));
+                        // Pasted, then Enter on its own: inside a paste it wouldn't run.
+                        view.session().paste(&format!("cd {}", shell_quote(dir, shell)));
+                        view.session().write(*b"\r");
                     }
                 }
                 self.focus_active(window, cx);
@@ -389,7 +392,7 @@ impl Workspace {
     pub(crate) fn drop_path(&mut self, id: PaneId, path: &std::path::Path, window: &mut Window, cx: &mut Context<Self>) {
         let Some(tab) = self.tabs.iter_mut().find(|t| t.panes.contains_key(&id)) else { return };
         tab.active = id;
-        let text = format!("{} ", shell_quote(path));
+        let text = format!("{} ", shell_quote(path, tab.panes[&id].shell(cx)));
         tab.panes[&id].view.update(cx, |view, cx| view.insert_text(&text, cx));
         self.focus_active(window, cx);
     }

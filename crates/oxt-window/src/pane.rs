@@ -6,7 +6,7 @@ use gpui_kit::*;
 use oxt_config::Chrome;
 use oxt_session::alacritty_terminal::vte::ansi::Rgb;
 use oxt_terminal_view::{Clear, Copy, Paste, TerminalView};
-use oxt_toolbelt::DraggedPath;
+use oxt_toolbelt::{DraggedPath, Shell};
 
 use crate::window::{ClosePane, SplitDown, SplitRight, Tab, Workspace};
 
@@ -33,6 +33,12 @@ impl Pane {
             return "~".into();
         }
         cwd.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "/".into()).into()
+    }
+
+    /// How to quote a path for whatever is reading this pane's input: fish
+    /// started from zsh gets fish quoting.
+    pub fn shell(&self, cx: &App) -> Shell {
+        self.view.read(cx).session().foreground().map(|p| Shell::from_process(&p.name)).unwrap_or_default()
     }
 }
 

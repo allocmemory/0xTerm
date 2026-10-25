@@ -5258,6 +5258,8 @@ dependencies = [
  "merman",
  "notify",
  "oxt-config",
+ "oxt-session",
+ "oxt-task",
  "regex-syntax",
  "resvg 0.48.1",
 ]

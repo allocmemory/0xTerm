@@ -482,9 +482,10 @@ impl TerminalView {
         cx.notify();
     }
 
-    /// Writes text as if typed, e.g. a path dropped from the file tree.
+    /// Writes text on the user's behalf, e.g. a path dropped from the file tree.
+    /// Sent as a paste, so a shell with bracketed paste takes it literally.
     pub fn insert_text(&mut self, text: &str, cx: &mut Context<Self>) {
-        self.session.type_text(text);
+        self.session.paste(text);
         cx.notify();
     }
 }
