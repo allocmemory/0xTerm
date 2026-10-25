@@ -1,8 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Used with the hardened runtime when signing with a Developer ID for
-     notarization. A terminal needs no special entitlements: the shells it
-     starts are separate programs with their own rights. -->
+     notarization. 0xTerm itself needs none of these: macOS checks them on
+     0xTerm's behalf when a program running in it sends Apple events (osascript)
+     or opens the camera or microphone. Each one still asks the user first,
+     with the matching text from Info.plist. -->
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
 </plist>

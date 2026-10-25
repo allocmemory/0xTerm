@@ -32,5 +32,57 @@
 	<true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+	<!-- Sparkle: the update feed, and the public half of the key that signs every update. -->
+	<key>SUFeedURL</key>
+	<string>https://0xterm.org/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>xZFYRI6DWtoxp1njcqf1Jhm5cAebBZW5wpkz7jYfTKI=</string>
+	<!-- Open a folder (a window that starts there) or a text file (in the viewer)
+	     from Finder or the Dock icon. Alternate: 0xTerm never becomes the default app. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Text</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.text</string>
+			</array>
+		</dict>
+	</array>
+	<!-- macOS asks on behalf of 0xTerm when a program run in it needs one of
+	     these; without the text, the request fails without asking. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>A program running in 0xTerm wants to control another app.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>A program running in 0xTerm wants to use files on your Desktop.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>A program running in 0xTerm wants to use files in your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>A program running in 0xTerm wants to use files in your Downloads folder.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>A program running in 0xTerm wants to use files on a removable drive.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>A program running in 0xTerm wants to use files on a network drive.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A program running in 0xTerm wants to use the camera.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A program running in 0xTerm wants to use the microphone.</string>
 </dict>
 </plist>
