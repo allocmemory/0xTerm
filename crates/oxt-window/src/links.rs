@@ -9,7 +9,7 @@ use std::path::PathBuf;
 pub enum Route {
     /// A file, for the viewer.
     File(PathBuf),
-    /// A web or mail link, for the browser or mail app.
+    /// A web or mail link, for the browser or mail app, as the parser read it.
     External(String),
 }
 
@@ -33,7 +33,9 @@ pub fn route(url: &str) -> Option<Route> {
             let path = url::Url::parse(&format!("file://{}", parsed.path())).ok()?.to_file_path().ok()?;
             path.is_file().then_some(Route::File(path))
         }
-        "http" | "https" | "mailto" => Some(Route::External(url.to_owned())),
+        // The parsed form, so what the prompt shows and macOS opens is what
+        // was checked, not a raw spelling another parser might read differently.
+        "http" | "https" | "mailto" => Some(Route::External(parsed.into())),
         _ => None,
     }
 }
@@ -56,6 +58,14 @@ mod tests {
     fn web_and_mail_links_leave_the_app() {
         assert_eq!(route("https://example.com/a"), Some(Route::External("https://example.com/a".into())));
         assert_eq!(route("mailto:a@b.c"), Some(Route::External("mailto:a@b.c".into())));
+    }
+
+    #[test]
+    fn the_url_shown_and_opened_is_the_one_checked() {
+        // Odd spellings the parser cleans up: the prompt and macOS get the clean form.
+        assert_eq!(route(r"https:\\good.com\@evil.com"), Some(Route::External("https://good.com/@evil.com".into())));
+        assert_eq!(route("https:evil.com"), Some(Route::External("https://evil.com/".into())));
+        assert_eq!(route("HTTPS://Example.COM/a"), Some(Route::External("https://example.com/a".into())));
     }
 
     #[test]
