@@ -402,7 +402,11 @@ impl Viewer {
                                 .text_size(px(12.))
                                 .font_family("Menlo")
                                 .text_color(rgba(chrome.dim))
-                                .child(format!("Mermaid: {err}\n\n{source}")),
+                                .child(match err {
+                                    // The source may be what made it too large; don't lay it out.
+                                    mermaid::RenderError::TooLarge(_) => format!("Mermaid: {err}"),
+                                    mermaid::RenderError::Invalid(_) => format!("Mermaid: {err}\n\n{source}"),
+                                }),
                         );
                     }
                     None => {
