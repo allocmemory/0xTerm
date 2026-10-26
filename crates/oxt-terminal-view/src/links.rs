@@ -47,6 +47,10 @@ fn token_at(line: &str, col: usize) -> Option<&str> {
     Some(line[from..to].trim_end_matches(['.', ':', '!', '?']))
 }
 
+/// The most link text shown in the prompt; a link can be drawn over a whole
+/// screen, and it's read while the terminal is locked.
+const MAX_SHOWN: usize = 256;
+
 /// The OSC 8 hyperlink at `point`, with the text it's drawn over: the run of
 /// cells around it with the same link, across rows the text wrapped onto.
 pub fn hyperlink_at(grid: &Grid<Cell>, point: Point) -> Option<Link> {
@@ -65,16 +69,28 @@ pub fn hyperlink_at(grid: &Grid<Cell>, point: Point) -> Option<Link> {
     };
     let same = |p: &Point| grid[*p].hyperlink().as_ref() == Some(&link);
     let mut start = point;
-    while let Some(p) = before(start).filter(same) {
-        start = p;
+    let mut cut = false;
+    for _ in 0..MAX_SHOWN {
+        match before(start).filter(same) {
+            Some(p) => start = p,
+            None => break,
+        }
     }
+    cut |= before(start).filter(same).is_some();
     let mut shown = String::new();
     let mut at = Some(start);
     while let Some(p) = at.filter(same) {
+        if shown.chars().count() == MAX_SHOWN {
+            cut = true;
+            break;
+        }
         if !grid[p].flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
             shown.push(grid[p].c);
         }
         at = after(p);
+    }
+    if cut {
+        shown.push('…');
     }
     Some(Link::Hyperlink { uri: link.uri().to_owned(), shown })
 }
@@ -133,6 +149,15 @@ mod tests {
             assert_eq!(hyperlink_at(engine.term.grid(), Point::new(Line(line), Column(col))), expected, "clicked {line}:{col}");
         }
         assert_eq!(hyperlink_at(engine.term.grid(), Point::new(Line(1), Column(9))), None);
+    }
+
+    #[test]
+    fn hyperlink_text_is_capped() {
+        let (tx, _rx) = async_channel::unbounded();
+        let mut engine = oxt_session::Engine::new(oxt_session::GridSize { rows: 5, cols: 10 }, 400, oxt_session::Listener::new(|_| {}, tx));
+        engine.advance(format!("\x1b]8;;https://x\x1b\\{}\x1b]8;;\x1b\\", "g".repeat(2000)).as_bytes());
+        let Some(Link::Hyperlink { shown, .. }) = hyperlink_at(engine.term.grid(), Point::new(Line(3), Column(0))) else { panic!("no link") };
+        assert!(shown.chars().count() <= MAX_SHOWN + 1 && shown.ends_with('…'), "{} chars", shown.chars().count());
     }
 
     #[test]
