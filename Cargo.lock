@@ -5213,7 +5213,7 @@ dependencies = [
 
 [[package]]
 name = "oxt-config"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "serde",
  "toml 1.1.8+spec-1.1.0",
@@ -5221,7 +5221,7 @@ dependencies = [
 
 [[package]]
 name = "oxt-session"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "alacritty_terminal",
  "async-channel",
@@ -5230,14 +5230,14 @@ dependencies = [
 
 [[package]]
 name = "oxt-task"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "oxt-terminal-view"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-channel",
  "gpui-kit",
@@ -5248,7 +5248,7 @@ dependencies = [
 
 [[package]]
 name = "oxt-toolbelt"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-channel",
  "gpui-kit",
@@ -5258,25 +5258,30 @@ dependencies = [
  "merman",
  "notify",
  "oxt-config",
+ "oxt-session",
+ "oxt-task",
  "regex-syntax",
  "resvg 0.48.1",
+ "url",
 ]
 
 [[package]]
 name = "oxt-window"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
+ "async-channel",
  "gpui-kit",
  "oxt-config",
  "oxt-session",
  "oxt-task",
  "oxt-terminal-view",
  "oxt-toolbelt",
+ "url",
 ]
 
 [[package]]
 name = "oxterm"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-channel",
  "gpui-kit",
@@ -6589,9 +6594,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "once_cell",
  "ring",
@@ -6634,9 +6639,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -7536,7 +7541,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

@@ -9,6 +9,6 @@ mod sidebar;
 mod tree_view;
 pub mod viewer;
 
-pub use events::{DraggedPath, OpenRequest, ToolbeltEvent, shell_quote};
+pub use events::{DraggedPath, OpenRequest, Shell, ToolbeltEvent, shell_quote};
 pub use sidebar::{Sidebar, SidebarMode};
 pub use viewer::Viewer;

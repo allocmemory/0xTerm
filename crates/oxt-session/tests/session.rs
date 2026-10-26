@@ -138,3 +138,197 @@ fn real_shell_end_to_end() {
     }
     panic!("shell didn't exit");
 }
+
+#[test]
+fn clipboard_writes_have_a_size_limit() {
+    let (mut e, _, rx) = engine(4, 20);
+    e.advance(b"\x1b]52;c;aGk=\x07"); // "hi"
+    assert!(rx.try_iter_pending().any(|ev| matches!(ev, SessionEvent::Copy(t) if t == "hi")));
+
+    // "QUFB" is base64 for "AAA": 8 MiB of text, more than anyone means to copy.
+    let big = format!("\x1b]52;c;{}\x07", "QUFB".repeat(8 * 1024 * 1024 / 3));
+    e.advance(big.as_bytes());
+    let events: Vec<_> = rx.try_iter_pending().collect();
+    assert!(!events.iter().any(|ev| matches!(ev, SessionEvent::Copy(_))), "an 8 MiB write reached the clipboard");
+    // Blocked, not silently: the UI tells the user, with about the size.
+    assert!(events.iter().any(|ev| matches!(ev, SessionEvent::CopyBlocked(n) if n.abs_diff(8 * 1024 * 1024) < 1024)), "{events:?}");
+
+    // Between the limit and the length an escape sequence may have, the parser
+    // sees it whole and reports the exact size.
+    let over = format!("\x1b]52;c;{}\x07", "QUFB".repeat(1024 * 1024 / 3 + 1));
+    e.advance(over.as_bytes());
+    assert!(rx.try_iter_pending().any(|ev| matches!(ev, SessionEvent::CopyBlocked(n) if n == (1024 * 1024 / 3 + 1) * 3)));
+}
+
+/// An escape sequence that never ends, e.g. `cat` of a hostile file.
+fn huge_osc(e: &mut Engine, mib: usize) {
+    e.advance(b"\x1b]0;");
+    let chunk = vec![b'x'; 64 * 1024];
+    for _ in 0..mib * 16 {
+        e.advance(&chunk);
+    }
+    e.advance(b"\x07after");
+}
+
+#[test]
+fn oversized_escape_sequence_is_dropped_and_output_resumes() {
+    let (mut e, _, _) = engine(4, 20);
+    huge_osc(&mut e, 4);
+    assert_eq!(row(&e, 0), "after");
+    // A clipboard write near its 1 MiB limit is still a whole sequence.
+    let (mut e, _, rx) = engine(4, 20);
+    let copy = format!("\x1b]52;c;{}\x07", "QUFB".repeat(1024 * 1024 / 3 - 1));
+    e.advance(copy.as_bytes());
+    assert!(rx.try_iter_pending().any(|ev| matches!(ev, SessionEvent::Copy(_))));
+}
+
+/// Run in release under `/usr/bin/time -l` to see peak memory.
+#[test]
+#[ignore]
+fn huge_escape_sequence_memory() {
+    let (mut e, _, _) = engine(4, 20);
+    huge_osc(&mut e, 512);
+    assert_eq!(row(&e, 0), "after");
+}
+
+#[test]
+fn oversized_escape_sequences_never_reach_the_parser() {
+    // vte stays in its escape state through control bytes, DEL, high bytes and
+    // a repeated ESC, so each of these still opens an OSC (a title).
+    let prefixes: [&[u8]; 5] = [b"\x1b]0;", b"\x1b\x00]0;", b"\x1b\x7f]0;", b"\x1b\xc3]0;", b"\x1b]\x1b\x1b]0;"];
+    for prefix in prefixes {
+        let (mut e, _, rx) = engine(4, 20);
+        e.advance(prefix);
+        let chunk = vec![b'x'; 64 * 1024];
+        for _ in 0..64 {
+            e.advance(&chunk);
+        }
+        e.advance(b"\x07after");
+        let long_title = rx.try_iter_pending().find_map(|ev| match ev {
+            SessionEvent::Title(Some(t)) if t.len() > 4096 => Some(t.len()),
+            _ => None,
+        });
+        assert_eq!(long_title, None, "{prefix:?}: an oversized sequence reached the parser");
+        assert_eq!(row(&e, 0), "after", "{prefix:?}");
+    }
+}
+
+/// The scanner in front of the parser must not change what normal output
+/// does: random streams of escapes, control bytes and text, split at random,
+/// give the same screen, cursor, titles and copies as vte alone.
+#[test]
+fn the_scanner_changes_nothing_for_normal_output() {
+    use alacritty_terminal::term::{Config, Term};
+    use alacritty_terminal::vte::ansi::Processor;
+
+    let alphabet: &[&[u8]] = &[
+        b"\x1b",
+        b"]",
+        b"[",
+        b"\\",
+        b"\x07",
+        b"\x18",
+        b"\x1a",
+        b"\x00",
+        b"\n",
+        b"\r",
+        b"a",
+        b"Z",
+        b"0",
+        b"2",
+        b";",
+        b"m",
+        b"1",
+        b"\x7f",
+        "é".as_bytes(),
+        b"\xc3",
+        b"]0;t",
+        b"]52;c;aGk=",
+        b"]8;;https://x\x1b\\",
+        b"[31m",
+        b"[2J",
+        b"P",
+        b"X",
+        b"_",
+        b"(B",
+    ];
+    let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = move |n: usize| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % n as u64) as usize
+    };
+    let size = GridSize { rows: 4, cols: 12 };
+    for case in 0..3000 {
+        let mut stream = Vec::new();
+        for _ in 0..next(60) {
+            stream.extend_from_slice(alphabet[next(alphabet.len())]);
+        }
+        // Ends any sequence, so neither side is left waiting for more bytes:
+        // the scanner holds an ESC until it knows what follows.
+        stream.push(0x18);
+        let (mut ours, _, ours_rx) = engine(size.rows, size.cols);
+        let (tx, theirs_rx) = async_channel::unbounded();
+        let mut term = Term::new(Config { scrolling_history: 100, kitty_keyboard: true, ..Config::default() }, &size, Listener::new(|_| {}, tx));
+        let mut parser: Processor = Processor::new();
+        // Both get the same chunks: vte's own handling of a UTF-8 character
+        // split between reads isn't what this compares.
+        let mut rest = &stream[..];
+        while !rest.is_empty() {
+            let (chunk, tail) = rest.split_at(1 + next(rest.len()));
+            ours.advance(chunk);
+            parser.advance(&mut term, chunk);
+            rest = tail;
+        }
+        let screen = |t: &Term<Listener>| {
+            let grid = t.grid();
+            let rows: Vec<String> =
+                (0..grid.screen_lines() as i32).map(|l| (0..grid.columns()).map(|c| grid[Line(l)][Column(c)].c).collect()).collect();
+            (rows, grid.cursor.point)
+        };
+        let seen = |rx: &async_channel::Receiver<SessionEvent>| {
+            rx.try_iter_pending()
+                .filter_map(|ev| match ev {
+                    SessionEvent::Title(t) => Some(format!("title {t:?}")),
+                    SessionEvent::Copy(t) => Some(format!("copy {t:?}")),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(screen(&ours.term), screen(&term), "case {case}: {stream:?}");
+        assert_eq!(seen(&ours_rx), seen(&theirs_rx), "case {case}: {stream:?}");
+    }
+}
+
+/// Dropping an oversized OSC drops only the OSC: control bytes around it run
+/// as they would in vte, which shows the same screen as for a short OSC.
+#[test]
+fn dropping_a_sequence_keeps_the_bytes_around_it() {
+    use alacritty_terminal::term::{Config, Term};
+    use alacritty_terminal::vte::ansi::Processor;
+    let size = GridSize { rows: 4, cols: 12 };
+    let screen = |t: &Term<Listener>| {
+        let grid = t.grid();
+        let rows: Vec<String> = (0..grid.screen_lines() as i32).map(|l| (0..grid.columns()).map(|c| grid[Line(l)][Column(c)].c).collect()).collect();
+        (rows, grid.cursor.point)
+    };
+    // Before `]`: vte runs LF and CR in its escape state. After the OSC: SUB and CAN run too.
+    let prefixes: [&[u8]; 3] = [b"ab\x1b]0;", b"ab\x1b\n\r]0;", b"ab\x1b\n]0;"];
+    let ends: [&[u8]; 4] = [b"\x07", b"\x1a", b"\x18", b"\x1b\\"];
+    for prefix in prefixes {
+        for end in ends {
+            let (mut ours, _, _) = engine(size.rows, size.cols);
+            ours.advance(prefix);
+            ours.advance(&vec![b'x'; 3 * 1024 * 1024]);
+            ours.advance(end);
+            ours.advance(b"cd");
+
+            let (tx, _rx) = async_channel::unbounded();
+            let mut term = Term::new(Config { scrolling_history: 100, kitty_keyboard: true, ..Config::default() }, &size, Listener::new(|_| {}, tx));
+            let mut parser: Processor = Processor::new();
+            parser.advance(&mut term, &[prefix, b"x", end, b"cd"].concat());
+            assert_eq!(screen(&ours.term), screen(&term), "{prefix:?} … {end:?}");
+        }
+    }
+}

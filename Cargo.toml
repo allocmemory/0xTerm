@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/oxt-config", "crates/oxt-task", "crates/oxt-session", "crates/oxt-toolbelt", "crates/oxt-terminal-view", "crates/oxt-window", "app"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 publish = false
 license = "GPL-3.0-only"

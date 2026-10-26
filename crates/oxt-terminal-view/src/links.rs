@@ -1,12 +1,26 @@
 //! ⌘-click targets in terminal text: URLs, and file paths with an optional
-//! `:line[:col]`, the way compilers and grep print them.
+//! `:line[:col]`, the way compilers and grep print them. Where a URL may go
+//! is the window's call (`oxt-window`'s links), not the pane's.
 
 use std::path::{Path, PathBuf};
 
+use oxt_session::alacritty_terminal::grid::{Dimensions, Grid};
+use oxt_session::alacritty_terminal::index::{Column, Line, Point};
+use oxt_session::alacritty_terminal::term::cell::{Cell, Flags};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Link {
+    /// A URL printed in the output.
     Url(String),
-    File { path: PathBuf, line: Option<u64> },
+    /// An OSC 8 hyperlink: its URL, and the text it's drawn over.
+    Hyperlink {
+        uri: String,
+        shown: String,
+    },
+    File {
+        path: PathBuf,
+        line: Option<u64>,
+    },
 }
 
 /// Characters that can't be part of a path or URL token.
@@ -31,6 +45,54 @@ fn token_at(line: &str, col: usize) -> Option<&str> {
     let from = chars[start].0;
     let to = chars.get(end + 1).map(|(i, _)| *i).unwrap_or(line.len());
     Some(line[from..to].trim_end_matches(['.', ':', '!', '?']))
+}
+
+/// The most link text shown in the prompt; a link can be drawn over a whole
+/// screen, and it's read while the terminal is locked.
+const MAX_SHOWN: usize = 256;
+
+/// The OSC 8 hyperlink at `point`, with the text it's drawn over: the run of
+/// cells around it with the same link, across rows the text wrapped onto.
+pub fn hyperlink_at(grid: &Grid<Cell>, point: Point) -> Option<Link> {
+    let link = grid[point].hyperlink()?;
+    let last = grid.last_column();
+    let wraps = |line: Line| grid[line][last].flags.contains(Flags::WRAPLINE);
+    let before = |p: Point| match p.column.0 {
+        0 if p.line > grid.topmost_line() && wraps(p.line - 1) => Some(Point::new(p.line - 1, last)),
+        0 => None,
+        c => Some(Point::new(p.line, Column(c - 1))),
+    };
+    let after = |p: Point| match p.column {
+        c if c < last => Some(Point::new(p.line, c + 1)),
+        _ if p.line < grid.bottommost_line() && wraps(p.line) => Some(Point::new(p.line + 1, Column(0))),
+        _ => None,
+    };
+    let same = |p: &Point| grid[*p].hyperlink().as_ref() == Some(&link);
+    let mut start = point;
+    let mut cut = false;
+    for _ in 0..MAX_SHOWN {
+        match before(start).filter(same) {
+            Some(p) => start = p,
+            None => break,
+        }
+    }
+    cut |= before(start).filter(same).is_some();
+    let mut shown = String::new();
+    let mut at = Some(start);
+    while let Some(p) = at.filter(same) {
+        if shown.chars().count() == MAX_SHOWN {
+            cut = true;
+            break;
+        }
+        if !grid[p].flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
+            shown.push(grid[p].c);
+        }
+        at = after(p);
+    }
+    if cut {
+        shown.push('…');
+    }
+    Some(Link::Hyperlink { uri: link.uri().to_owned(), shown })
 }
 
 /// Finds what was clicked. Paths resolve against `cwd` and must exist.
@@ -67,6 +129,35 @@ mod tests {
         let line = "see https://example.com/a?b=1. for more";
         assert_eq!(link_at(line, 8, None, None), Some(Link::Url("https://example.com/a?b=1".into())));
         assert_eq!(link_at(line, 0, None, None), None);
+    }
+
+    #[test]
+    fn printed_urls_go_to_the_window_as_written() {
+        // `FILE:` and `ftp:` too: routing them is the window's job.
+        for url in ["file:///tmp/run.command", "ftp://example.com/a"] {
+            assert_eq!(link_at(&format!("see {url} here"), 6, None, None), Some(Link::Url(url.into())));
+        }
+    }
+
+    #[test]
+    fn hyperlink_text_follows_a_wrap() {
+        let (tx, _rx) = async_channel::unbounded();
+        let mut engine = oxt_session::Engine::new(oxt_session::GridSize { rows: 3, cols: 10 }, 0, oxt_session::Listener::new(|_| {}, tx));
+        engine.advance(b"\x1b]8;;https://evil.example\x1b\\github.com/org/repo\x1b]8;;\x1b\\ more");
+        let expected = Some(Link::Hyperlink { uri: "https://evil.example".into(), shown: "github.com/org/repo".into() });
+        for (line, col) in [(0, 3), (1, 2)] {
+            assert_eq!(hyperlink_at(engine.term.grid(), Point::new(Line(line), Column(col))), expected, "clicked {line}:{col}");
+        }
+        assert_eq!(hyperlink_at(engine.term.grid(), Point::new(Line(1), Column(9))), None);
+    }
+
+    #[test]
+    fn hyperlink_text_is_capped() {
+        let (tx, _rx) = async_channel::unbounded();
+        let mut engine = oxt_session::Engine::new(oxt_session::GridSize { rows: 5, cols: 10 }, 400, oxt_session::Listener::new(|_| {}, tx));
+        engine.advance(format!("\x1b]8;;https://x\x1b\\{}\x1b]8;;\x1b\\", "g".repeat(2000)).as_bytes());
+        let Some(Link::Hyperlink { shown, .. }) = hyperlink_at(engine.term.grid(), Point::new(Line(3), Column(0))) else { panic!("no link") };
+        assert!(shown.chars().count() <= MAX_SHOWN + 1 && shown.ends_with('…'), "{} chars", shown.chars().count());
     }
 
     #[test]

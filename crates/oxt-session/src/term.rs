@@ -60,11 +60,14 @@ impl Engine {
     /// Bytes inside a synchronized update (`CSI ? 2026 h`) are held by the
     /// parser until the update ends, so a half-drawn frame is never shown.
     pub fn advance(&mut self, bytes: &[u8]) -> bool {
-        for event in self.osc.scan(bytes) {
+        let scan = self.osc.scan(bytes);
+        for event in scan.events {
             match event {
                 OscEvent::Cwd(dir) => self.listener.emit(SessionEvent::Cwd(dir)),
+                OscEvent::CopyBlocked(bytes) => self.listener.emit(SessionEvent::CopyBlocked(bytes)),
             }
         }
+        let bytes = scan.filtered.as_deref().unwrap_or(bytes);
         let held_before = self.parser.sync_bytes_count();
         self.parser.advance(&mut self.term, bytes);
         let deadline = self.parser.sync_timeout().sync_timeout();
@@ -144,6 +147,9 @@ impl Default for Palette {
     }
 }
 
+/// The most a program can put on the clipboard (OSC 52) at once.
+pub const MAX_COPY: usize = 1024 * 1024;
+
 /// Writes bytes back to the program (answers to its queries).
 type Reply = Arc<dyn Fn(&[u8]) + Send + Sync>;
 
@@ -193,7 +199,9 @@ impl EventListener for Listener {
             Event::Title(title) => self.emit(SessionEvent::Title(Some(title))),
             Event::ResetTitle => self.emit(SessionEvent::Title(None)),
             Event::Bell => self.emit(SessionEvent::Bell),
-            Event::ClipboardStore(_, text) => self.emit(SessionEvent::Copy(text)),
+            // A program may copy (OSC 52), up to a size anyone means to copy.
+            Event::ClipboardStore(_, text) if text.len() <= MAX_COPY => self.emit(SessionEvent::Copy(text)),
+            Event::ClipboardStore(_, text) => self.emit(SessionEvent::CopyBlocked(text.len())),
             // OSC 52 reads stay off: a program must not read the clipboard behind your back.
             Event::ClipboardLoad(..) => {}
             Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange => {}

@@ -48,12 +48,22 @@ pub enum TerminalEvent {
     /// The shell reported a new directory (OSC 7).
     CwdChanged(PathBuf),
     Bell,
+    /// A program copied this many characters to the clipboard (OSC 52).
+    Copied(usize),
+    /// A program tried to copy this many bytes, over the limit.
+    CopyBlocked(usize),
     Focused,
     Exited,
     /// ⌘-click on a file path in the output.
     OpenFile {
         path: PathBuf,
         line: Option<u64>,
+    },
+    /// ⌘-click on a URL: printed (`shown` is `None`), or an OSC 8 hyperlink
+    /// drawn over `shown`. The window decides where it may go.
+    OpenUrl {
+        url: String,
+        shown: Option<String>,
     },
 }
 
@@ -176,7 +186,12 @@ impl TerminalView {
             }
             SessionEvent::Cwd(dir) => cx.emit(TerminalEvent::CwdChanged(dir)),
             SessionEvent::Bell => cx.emit(TerminalEvent::Bell),
-            SessionEvent::Copy(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
+            SessionEvent::Copy(text) => {
+                let chars = text.chars().count();
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                cx.emit(TerminalEvent::Copied(chars));
+            }
+            SessionEvent::CopyBlocked(bytes) => cx.emit(TerminalEvent::CopyBlocked(bytes)),
             SessionEvent::SyncPending(deadline) => {
                 cx.spawn(async move |this, cx| {
                     cx.background_executor().timer(deadline.saturating_duration_since(Instant::now())).await;
@@ -235,16 +250,8 @@ impl TerminalView {
         let home = std::env::var_os("HOME").map(PathBuf::from);
         let engine = self.session.lock();
         let grid = engine.term.grid();
-        if let Some(link) = grid[point].hyperlink() {
-            let uri = link.uri().to_owned();
-            drop(engine);
-            return match uri.strip_prefix("file://") {
-                Some(rest) => {
-                    let path = PathBuf::from(&rest[rest.find('/').unwrap_or(0)..]);
-                    path.is_file().then_some(Link::File { path, line: None })
-                }
-                None => Some(Link::Url(uri)),
-            };
+        if let Some(link) = links::hyperlink_at(grid, point) {
+            return Some(link);
         }
         // A long path may wrap across rows; join the whole logical line.
         let wrapped = |line: Line| grid[line][grid.last_column()].flags.contains(Flags::WRAPLINE);
@@ -326,7 +333,8 @@ impl TerminalView {
         let (point, side, col, line) = self.grid_point(event.position);
         if event.modifiers.platform && event.button == MouseButton::Left {
             match self.link_at(point) {
-                Some(Link::Url(url)) => cx.open_url(&url),
+                Some(Link::Url(url)) => cx.emit(TerminalEvent::OpenUrl { url, shown: None }),
+                Some(Link::Hyperlink { uri, shown }) => cx.emit(TerminalEvent::OpenUrl { url: uri, shown: Some(shown) }),
                 Some(Link::File { path, line }) => cx.emit(TerminalEvent::OpenFile { path, line }),
                 None => {}
             }
@@ -482,9 +490,10 @@ impl TerminalView {
         cx.notify();
     }
 
-    /// Writes text as if typed, e.g. a path dropped from the file tree.
+    /// Writes text on the user's behalf, e.g. a path dropped from the file tree.
+    /// Sent as a paste, so a shell with bracketed paste takes it literally.
     pub fn insert_text(&mut self, text: &str, cx: &mut Context<Self>) {
-        self.session.type_text(text);
+        self.session.paste(text);
         cx.notify();
     }
 }

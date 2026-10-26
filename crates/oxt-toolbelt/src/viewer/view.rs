@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use gpui_kit::component::input::{Editor, EditorState, Input, InputEvent, InputState, Position};
 use gpui_kit::component::text::TextView;
@@ -13,7 +13,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use oxt_config::Chrome;
 
-use crate::events::OpenRequest;
+use crate::events::{OpenRequest, ToolbeltEvent};
 use crate::viewer::load::{self, Content};
 use crate::viewer::markdown::{self, Segment};
 use crate::viewer::{find, mermaid};
@@ -61,8 +61,12 @@ pub struct Viewer {
     dark: bool,
     /// Diagrams being drawn in the background.
     rendering: HashSet<(String, bool)>,
+    /// Timed-out diagrams with a timer set for their second try.
+    retrying: HashSet<(String, bool)>,
     _subscriptions: Vec<Subscription>,
 }
+
+impl EventEmitter<ToolbeltEvent> for Viewer {}
 
 impl Viewer {
     pub fn new(chrome: Chrome, dark: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -83,7 +87,17 @@ impl Viewer {
         })
         .detach();
 
-        Viewer { docs: Vec::new(), active: 0, find, find_count: "".into(), chrome, dark, rendering: HashSet::new(), _subscriptions: subscriptions }
+        Viewer {
+            docs: Vec::new(),
+            active: 0,
+            find,
+            find_count: "".into(),
+            chrome,
+            dark,
+            rendering: HashSet::new(),
+            retrying: HashSet::new(),
+            _subscriptions: subscriptions,
+        }
     }
 
     pub fn set_theme(&mut self, chrome: Chrome, dark: bool, cx: &mut Context<Self>) {
@@ -371,6 +385,7 @@ impl Viewer {
         let viewer = cx.entity();
         let mut column = div().flex().flex_col().gap(px(12.)).px(px(28.)).py(px(20.)).max_w(px(860.));
         let mut to_render = Vec::new();
+        let mut to_retry = Vec::new();
         for (i, segment) in doc.segments.iter().enumerate() {
             match segment {
                 Segment::Markdown(text) => {
@@ -392,6 +407,9 @@ impl Viewer {
                         );
                     }
                     Some(Err(err)) => {
+                        if let Some(at) = mermaid::retry_at(source, dark) {
+                            to_retry.push((source.clone(), at));
+                        }
                         column = column.child(
                             div()
                                 .p(px(10.))
@@ -400,7 +418,11 @@ impl Viewer {
                                 .text_size(px(12.))
                                 .font_family("Menlo")
                                 .text_color(rgba(chrome.dim))
-                                .child(format!("Mermaid: {err}\n\n{source}")),
+                                .child(match err {
+                                    // The source may be what made it too large; don't lay it out.
+                                    mermaid::RenderError::TooLarge(_) | mermaid::RenderError::TookTooLong(_) => format!("Mermaid: {err}"),
+                                    mermaid::RenderError::Invalid(_) => format!("Mermaid: {err}\n\n{source}"),
+                                }),
                         );
                     }
                     None => {
@@ -408,6 +430,18 @@ impl Viewer {
                         column = column.child(div().text_size(px(12.)).text_color(rgba(chrome.faint)).child("Drawing diagram…"));
                     }
                 },
+            }
+        }
+        for (source, at) in to_retry {
+            if self.retrying.insert((source.clone(), dark)) {
+                cx.spawn_in(window, async move |this, cx| {
+                    cx.background_executor().timer(at.saturating_duration_since(Instant::now())).await;
+                    let _ = this.update(cx, |viewer, cx| {
+                        viewer.retrying.remove(&(source, dark));
+                        cx.notify();
+                    });
+                })
+                .detach();
             }
         }
         for source in to_render {
@@ -428,18 +462,33 @@ impl Viewer {
     }
 }
 
-/// Relative links open in the viewer; web links open in the browser.
-fn open_link(viewer: &Entity<Viewer>, base: &Path, link: &SharedString, window: &mut Window, cx: &mut App) {
-    if link.contains("://") || link.starts_with("mailto:") {
-        cx.open_url(link);
-        return;
+/// Where a Markdown link goes.
+#[derive(Debug, PartialEq)]
+enum LinkTarget {
+    /// A URL: the window decides where it may go, and asks first.
+    Url(String),
+    /// A tab in this viewer.
+    File(PathBuf),
+}
+
+/// Relative links open in the viewer; URLs go to the window.
+fn link_target(base: &Path, link: &str) -> Option<LinkTarget> {
+    if url::Url::parse(link).is_ok() {
+        return Some(LinkTarget::Url(link.to_owned()));
     }
     let target = link.split('#').next().unwrap_or_default();
     if target.is_empty() {
-        return;
+        return None;
     }
-    let path = base.join(target);
-    viewer.update(cx, |viewer, cx| viewer.open(OpenRequest::path(path), window, cx));
+    Some(LinkTarget::File(base.join(target)))
+}
+
+fn open_link(viewer: &Entity<Viewer>, base: &Path, link: &SharedString, window: &mut Window, cx: &mut App) {
+    match link_target(base, link) {
+        Some(LinkTarget::Url(url)) => viewer.update(cx, |_, cx| cx.emit(ToolbeltEvent::OpenUrl(url))),
+        Some(LinkTarget::File(path)) => viewer.update(cx, |viewer, cx| viewer.open(OpenRequest::path(path), window, cx)),
+        None => {}
+    }
 }
 
 fn modified(path: &Path) -> Option<SystemTime> {
@@ -497,4 +546,21 @@ fn notice(text: &str, chrome: Chrome) -> AnyElement {
         .text_color(rgba(chrome.faint))
         .child(text.to_owned())
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `super::*`: GPUI's glob brings its own `test` attribute.
+    use super::{LinkTarget, link_target};
+    use std::path::Path;
+
+    #[test]
+    fn urls_go_to_the_window_and_relative_links_open_here() {
+        let base = Path::new("/repo/docs");
+        for url in ["https://0xterm.org/docs/", "mailto:a@b.c", "FILE:///repo/run.command", "smb://evil/share"] {
+            assert_eq!(link_target(base, url), Some(LinkTarget::Url(url.into())));
+        }
+        assert_eq!(link_target(base, "guide.md#setup"), Some(LinkTarget::File("/repo/docs/guide.md".into())));
+        assert_eq!(link_target(base, "#top"), None);
+    }
 }

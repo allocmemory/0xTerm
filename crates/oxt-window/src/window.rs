@@ -7,13 +7,17 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::notification::Notification;
 use gpui_kit::*;
 use oxt_config::{Chrome, Config};
-use oxt_session::SessionOptions;
+use oxt_session::{MAX_COPY, SessionOptions};
 use oxt_task::Command;
 use oxt_terminal_view::{TerminalEvent, TerminalStyle, TerminalView};
 use oxt_toolbelt::{Sidebar, ToolbeltEvent, Viewer, shell_quote};
 
+use crate::links::{self, Route, Source};
+use crate::notices;
 use crate::pane::{Pane, PaneId, render_pane};
 use crate::split::{Axis, Node};
 use crate::tab_bar::render_title_row;
@@ -78,6 +82,19 @@ enum Drag {
     Viewer,
 }
 
+/// A path quoted for the shell reading the pane, or `None` and a notice
+/// when that shell can't be given the name safely.
+fn quote_for(pane: &Pane, path: &std::path::Path, window: &mut Window, cx: &mut App) -> Option<String> {
+    let quoted = shell_quote(path, pane.shell(cx));
+    if quoted.is_none() {
+        window.push_notification(Notification::warning(notices::UNSAFE_PATH), cx);
+    }
+    quoted
+}
+
+/// Identifies the clipboard notice, so a new one replaces the last.
+struct ClipboardNotice;
+
 pub struct Workspace {
     config: Config,
     pub(crate) chrome: Chrome,
@@ -110,6 +127,7 @@ impl Workspace {
         let viewer = cx.new(|cx| Viewer::new(chrome, dark, window, cx));
         set_component_theme(dark, window, cx);
         cx.subscribe_in(&sidebar, window, |this, _, event, window, cx| this.on_toolbelt_event(event, window, cx)).detach();
+        cx.subscribe_in(&viewer, window, |this, _, event, window, cx| this.on_toolbelt_event(event, window, cx)).detach();
         let mut workspace = Workspace {
             sidebar,
             followed: None,
@@ -209,9 +227,18 @@ impl Workspace {
             }
             TerminalEvent::TitleChanged | TerminalEvent::CwdChanged(_) => self.refresh_labels(window, cx),
             TerminalEvent::Bell => {}
+            // One notice at a time: a later copy replaces it instead of stacking (vim and tmux yanks).
+            TerminalEvent::Copied(chars) => window.push_notification(Notification::info(notices::copied(*chars)).id::<ClipboardNotice>(), cx),
+            TerminalEvent::CopyBlocked(bytes) => {
+                window.push_notification(Notification::warning(notices::copy_blocked(*bytes, MAX_COPY)).id::<ClipboardNotice>(), cx)
+            }
             TerminalEvent::OpenFile { path, line } => {
                 let request = oxt_toolbelt::OpenRequest { path: path.clone(), line: *line, find: None };
                 self.open(request, window, cx);
+            }
+            TerminalEvent::OpenUrl { url, shown } => {
+                let source = shown.clone().map_or(Source::Text, Source::Hyperlink);
+                self.open_url(url, source, window, cx);
             }
         }
     }
@@ -360,23 +387,50 @@ impl Workspace {
                 cx.notify();
             }
             ToolbeltEvent::InsertPath(path) => {
-                if let Some(pane) = self.active_pane() {
-                    let text = format!("{} ", shell_quote(path));
-                    pane.view.update(cx, |view, cx| view.insert_text(&text, cx));
+                if let Some(pane) = self.active_pane()
+                    && let Some(quoted) = quote_for(pane, path, window, cx)
+                {
+                    pane.view.update(cx, |view, cx| view.insert_text(&format!("{quoted} "), cx));
                 }
                 self.focus_active(window, cx);
             }
             ToolbeltEvent::CdHere(dir) => {
-                if let Some(pane) = self.active_pane() {
-                    let view = pane.view.read(cx);
-                    // Only an idle shell gets a command typed into it.
-                    if !view.session().is_busy() {
-                        view.session().type_text(&format!("cd {}\n", shell_quote(dir)));
-                    }
+                // Only an idle shell gets a command typed into it.
+                if let Some(pane) = self.active_pane()
+                    && !pane.view.read(cx).session().is_busy()
+                    && let Some(quoted) = quote_for(pane, dir, window, cx)
+                {
+                    let session = pane.view.read(cx).session();
+                    // Pasted, then Enter on its own: inside a paste it wouldn't run.
+                    session.paste(&format!("cd {quoted}"));
+                    session.write(*b"\r");
                 }
                 self.focus_active(window, cx);
             }
             ToolbeltEvent::NewTabHere(dir) => self.new_tab_in(Some(dir.clone()), window, cx),
+            ToolbeltEvent::OpenUrl(url) => self.open_url(url, Source::Markdown, window, cx),
+        }
+    }
+
+    /// Every clicked URL ends here: files open in the viewer, web and mail
+    /// links outside, after asking when the target wasn't on screen.
+    fn open_url(&mut self, url: &str, source: Source, window: &mut Window, cx: &mut Context<Self>) {
+        match links::route(url) {
+            Some(Route::File(path)) => self.open(oxt_toolbelt::OpenRequest::path(path), window, cx),
+            Some(Route::External(url)) => match links::confirm_detail(&url, &source) {
+                None => cx.open_url(&url),
+                Some(detail) => {
+                    let buttons = [PromptButton::Ok("Open".into()), PromptButton::Cancel("Cancel".into())];
+                    let answer = window.prompt(PromptLevel::Warning, "Open this link?", Some(&detail), &buttons, cx);
+                    cx.spawn(async move |_, cx| {
+                        if answer.await == Ok(0) {
+                            cx.update(|cx| cx.open_url(&url));
+                        }
+                    })
+                    .detach();
+                }
+            },
+            None => {}
         }
     }
 
@@ -389,8 +443,10 @@ impl Workspace {
     pub(crate) fn drop_path(&mut self, id: PaneId, path: &std::path::Path, window: &mut Window, cx: &mut Context<Self>) {
         let Some(tab) = self.tabs.iter_mut().find(|t| t.panes.contains_key(&id)) else { return };
         tab.active = id;
-        let text = format!("{} ", shell_quote(path));
-        tab.panes[&id].view.update(cx, |view, cx| view.insert_text(&text, cx));
+        let pane = &tab.panes[&id];
+        if let Some(quoted) = quote_for(pane, path, window, cx) {
+            pane.view.update(cx, |view, cx| view.insert_text(&format!("{quoted} "), cx));
+        }
         self.focus_active(window, cx);
     }
 
