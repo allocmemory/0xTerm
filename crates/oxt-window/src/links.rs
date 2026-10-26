@@ -45,9 +45,15 @@ pub fn route(url: &str) -> Option<Route> {
 pub fn confirm_detail(url: &str, source: &Source) -> Option<String> {
     match source {
         Source::Text => None,
-        Source::Hyperlink(shown) if shown.trim() != url => Some(format!("{url}\n\nThe text on screen says: “{}”", shown.trim())),
+        // Compared as parsed, the way `url` was: `https://Example.com` on screen
+        // is the same link as `https://example.com/`.
+        Source::Hyperlink(shown) if !same_url(shown.trim(), url) => Some(format!("{url}\n\nThe text on screen says: “{}”", shown.trim())),
         Source::Hyperlink(_) | Source::Markdown => Some(url.to_owned()),
     }
+}
+
+fn same_url(shown: &str, url: &str) -> bool {
+    shown == url || url::Url::parse(shown).is_ok_and(|parsed| parsed.as_str() == url)
 }
 
 #[cfg(test)]
@@ -110,5 +116,9 @@ mod tests {
         assert_eq!(confirm_detail(url, &Source::Hyperlink("github.com".into())), Some(format!("{url}\n\nThe text on screen says: “github.com”")));
         // A hyperlink that shows its own URL still asks: it's a link, not text you read.
         assert_eq!(confirm_detail(url, &Source::Hyperlink(url.into())), Some(url.to_owned()));
+        // The same URL, spelled the way people write it, isn't a mismatch.
+        for shown in ["https://example.com", "HTTPS://Example.COM/", " https://example.com:443/ "] {
+            assert_eq!(confirm_detail("https://example.com/", &Source::Hyperlink(shown.into())), Some("https://example.com/".into()), "{shown:?}");
+        }
     }
 }
