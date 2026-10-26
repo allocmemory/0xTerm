@@ -97,6 +97,14 @@ fn cached_at(source: &str, dark: bool, now: Instant) -> Option<Result<Diagram, R
     (!retry).then(|| entry.result.clone())
 }
 
+/// When a timed-out diagram is due its second try, if it has one left. The
+/// viewer sets a timer for it: nothing else would ask again.
+pub fn retry_at(source: &str, dark: bool) -> Option<Instant> {
+    let cache = cache().lock().unwrap();
+    let entry = cache.get(&(source.to_owned(), dark))?;
+    (matches!(entry.result, Err(RenderError::TookTooLong(_))) && entry.timeouts < 2).then(|| entry.at + RETRY_AFTER)
+}
+
 /// Renders a diagram (slow: call off the UI thread) and caches it.
 pub fn render(source: &str, dark: bool) -> Result<Diagram, RenderError> {
     render_within(source, dark, DEADLINE, Instant::now())
@@ -106,12 +114,15 @@ fn render_within(source: &str, dark: bool, deadline: Duration, now: Instant) -> 
     if let Some(done) = cached_at(source, dark, now) {
         return done;
     }
+    let started = Instant::now();
     let result = render_uncached(source, dark, deadline);
+    // When it ended: the wait before a retry counts from the timeout.
+    let ended = now + started.elapsed();
     let mut cache = cache().lock().unwrap();
     let key = (source.to_owned(), dark);
     let before = cache.get(&key).map_or(0, |entry| entry.timeouts);
     let timeouts = if matches!(result, Err(RenderError::TookTooLong(_))) { before + 1 } else { 0 };
-    cache.insert(key, Entry { result: result.clone(), timeouts, at: now });
+    cache.insert(key, Entry { result: result.clone(), timeouts, at: ended });
     result
 }
 
@@ -204,15 +215,19 @@ mod tests {
         use super::{RETRY_AFTER, RenderError, cached_at, render_within};
         use std::time::{Duration, Instant};
         let (source, start) = ("flowchart LR\n  slow --> once", Instant::now());
-        let later = start + RETRY_AFTER;
         assert!(matches!(render_within(source, false, Duration::ZERO, start), Err(RenderError::TookTooLong(_))));
+        // Counted from when the timeout happened, not when the render began.
+        let later = super::retry_at(source, false).expect("the viewer is told when to ask again");
+        assert!(later >= start + RETRY_AFTER);
         assert!(matches!(cached_at(source, false, start), Some(Err(RenderError::TookTooLong(_)))), "not retried right away");
         assert!(cached_at(source, false, later).is_none(), "due its second try");
         assert!(matches!(render_within(source, false, Duration::ZERO, later), Err(RenderError::TookTooLong(_))));
         assert!(cached_at(source, false, later + RETRY_AFTER * 10).is_some(), "a second timeout stands");
+        assert_eq!(super::retry_at(source, false), None, "and needs no timer");
         // A diagram that renders on its second try replaces the timeout.
         let fine = "flowchart LR\n  slow --> twice";
         assert!(render_within(fine, false, Duration::ZERO, start).is_err());
+        let later = super::retry_at(fine, false).unwrap();
         assert!(render_within(fine, false, super::DEADLINE, later).is_ok());
         assert!(matches!(cached_at(fine, false, later), Some(Ok(_))));
     }

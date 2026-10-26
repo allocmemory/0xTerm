@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use gpui_kit::component::input::{Editor, EditorState, Input, InputEvent, InputState, Position};
 use gpui_kit::component::text::TextView;
@@ -61,6 +61,8 @@ pub struct Viewer {
     dark: bool,
     /// Diagrams being drawn in the background.
     rendering: HashSet<(String, bool)>,
+    /// Timed-out diagrams with a timer set for their second try.
+    retrying: HashSet<(String, bool)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -85,7 +87,17 @@ impl Viewer {
         })
         .detach();
 
-        Viewer { docs: Vec::new(), active: 0, find, find_count: "".into(), chrome, dark, rendering: HashSet::new(), _subscriptions: subscriptions }
+        Viewer {
+            docs: Vec::new(),
+            active: 0,
+            find,
+            find_count: "".into(),
+            chrome,
+            dark,
+            rendering: HashSet::new(),
+            retrying: HashSet::new(),
+            _subscriptions: subscriptions,
+        }
     }
 
     pub fn set_theme(&mut self, chrome: Chrome, dark: bool, cx: &mut Context<Self>) {
@@ -373,6 +385,7 @@ impl Viewer {
         let viewer = cx.entity();
         let mut column = div().flex().flex_col().gap(px(12.)).px(px(28.)).py(px(20.)).max_w(px(860.));
         let mut to_render = Vec::new();
+        let mut to_retry = Vec::new();
         for (i, segment) in doc.segments.iter().enumerate() {
             match segment {
                 Segment::Markdown(text) => {
@@ -394,6 +407,9 @@ impl Viewer {
                         );
                     }
                     Some(Err(err)) => {
+                        if let Some(at) = mermaid::retry_at(source, dark) {
+                            to_retry.push((source.clone(), at));
+                        }
                         column = column.child(
                             div()
                                 .p(px(10.))
@@ -414,6 +430,18 @@ impl Viewer {
                         column = column.child(div().text_size(px(12.)).text_color(rgba(chrome.faint)).child("Drawing diagram…"));
                     }
                 },
+            }
+        }
+        for (source, at) in to_retry {
+            if self.retrying.insert((source.clone(), dark)) {
+                cx.spawn_in(window, async move |this, cx| {
+                    cx.background_executor().timer(at.saturating_duration_since(Instant::now())).await;
+                    let _ = this.update(cx, |viewer, cx| {
+                        viewer.retrying.remove(&(source, dark));
+                        cx.notify();
+                    });
+                })
+                .detach();
             }
         }
         for source in to_render {
