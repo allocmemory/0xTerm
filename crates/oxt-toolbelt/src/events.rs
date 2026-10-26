@@ -36,13 +36,14 @@ pub struct DraggedPath(pub PathBuf);
 /// The quoting a shell reads back.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Shell {
-    /// zsh, bash, sh, ksh, dash.
+    /// zsh, bash, sh, ksh, dash, and anything that isn't a known shell: a
+    /// program like vim, or ssh to what is most likely one of these.
+    #[default]
     Posix,
     Fish,
-    /// Any other shell (nushell, tcsh), or one we can't tell. Their quoting
-    /// differs (nushell runs `(…)` inside `$'…'`, tcsh expands `!` inside
-    /// `'…'`), so only names with nothing to escape are typed into them.
-    #[default]
+    /// Shells whose quoting differs (nushell runs `(…)` inside `$'…'`, tcsh
+    /// expands `!` inside `'…'`, PowerShell ends `'…'` on curly quotes), so
+    /// only names with nothing to escape are typed into them.
     Other,
 }
 
@@ -50,9 +51,9 @@ impl Shell {
     /// The shell a process name (`zsh`, `-fish`) belongs to.
     pub fn from_process(name: &str) -> Self {
         match name.trim_start_matches('-') {
-            "zsh" | "bash" | "sh" | "ksh" | "mksh" | "dash" => Shell::Posix,
             "fish" => Shell::Fish,
-            _ => Shell::Other,
+            "nu" | "tcsh" | "csh" | "pwsh" | "powershell" | "xonsh" | "elvish" | "ion" | "murex" => Shell::Other,
+            _ => Shell::Posix,
         }
     }
 }
@@ -97,7 +98,7 @@ pub fn shell_quote(path: &std::path::Path, shell: Shell) -> Option<String> {
             }
             out.push('\'');
         }
-        Shell::Other if s.chars().any(|c| c.is_control() || matches!(c, '\'' | '\\' | '!')) => return None,
+        Shell::Other if s.chars().any(|c| c.is_control() || matches!(c, '\'' | '\\' | '!' | '\u{2018}'..='\u{201b}')) => return None,
         Shell::Other => out = format!("'{s}'"),
     }
     Some(out)
@@ -134,7 +135,8 @@ mod tests {
     #[test]
     fn other_shells_only_get_names_with_nothing_to_escape() {
         assert_eq!(shell_quote("/tmp/a b (1)".as_ref(), Shell::Other).unwrap(), "'/tmp/a b (1)'");
-        for name in ["/tmp/a\x01(open -a Calculator)", "/tmp/it's", r"/tmp/a\b", "/tmp/a!b"] {
+        // PowerShell also closes a single quote on ‘ ’ ‚ ‛.
+        for name in ["/tmp/a\x01(open -a Calculator)", "/tmp/it's", r"/tmp/a\b", "/tmp/a!b", "/tmp/a’; touch pwned; ‘", "/tmp/a‛b"] {
             assert_eq!(shell_quote(name.as_ref(), Shell::Other), None, "{name:?}");
         }
     }
@@ -145,5 +147,10 @@ mod tests {
         assert_eq!(Shell::from_process("zsh"), Shell::Posix);
         assert_eq!(Shell::from_process("nu"), Shell::Other);
         assert_eq!(Shell::from_process("tcsh"), Shell::Other);
+        assert_eq!(Shell::from_process("pwsh"), Shell::Other);
+        // Programs that aren't shells (vim, ssh to a remote zsh) get the usual quoting.
+        for name in ["vim", "ssh", "node", "claude"] {
+            assert_eq!(Shell::from_process(name), Shell::Posix, "{name}");
+        }
     }
 }
