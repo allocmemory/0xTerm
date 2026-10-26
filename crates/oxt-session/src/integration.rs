@@ -60,9 +60,9 @@ pub struct OscScanner {
     /// In `Escape`: the ESC already went to the parser (it ended an OSC), so
     /// it isn't held.
     escape_passed: bool,
-    /// In `Osc`: the parser has the ESC (not `]`), so dropping the OSC must
-    /// also take the parser out of its escape.
-    osc_needs_can: bool,
+    /// In `Osc`: where `]` is in `held`. What's before it (ESC, and bytes vte
+    /// runs in its escape state) still goes to the parser if the OSC is dropped.
+    osc_at: usize,
 }
 
 /// The bytes for the parser. Stays a view of the chunk while every byte goes
@@ -117,7 +117,7 @@ impl OscScanner {
                         self.held.clear();
                         held_at = Some(i);
                     }
-                    self.osc_needs_can = self.escape_passed;
+                    self.osc_at = self.held.len();
                     self.held.push(byte);
                     self.body.clear();
                     self.len = 0;
@@ -175,12 +175,16 @@ impl OscScanner {
                         self.body.push(byte);
                     }
                     if self.held.len() > MAX_SEQUENCE {
+                        // The parser gets what came before `]`, then CAN: vte
+                        // leaves its escape on CAN without dispatching anything.
+                        // With only the ESC held, there's nothing to undo.
+                        if self.escape_passed || self.osc_at > 1 {
+                            let copy = out.copy();
+                            copy.extend_from_slice(&self.held[..self.osc_at]);
+                            copy.push(0x18);
+                        }
                         self.held = Vec::new();
                         held_at = None;
-                        if self.osc_needs_can {
-                            // vte leaves its escape on CAN without dispatching anything.
-                            out.copy().push(0x18);
-                        }
                         self.state = State::Dropping;
                     }
                 }
@@ -191,9 +195,14 @@ impl OscScanner {
                         events.push(OscEvent::CopyBlocked(self.len / 4 * 3));
                     }
                     self.state = State::Ground;
-                    if byte == 0x1b {
-                        self.hold_escape(i, &mut held_at);
-                        self.after_drop = true;
+                    match byte {
+                        0x1b => {
+                            self.hold_escape(i, &mut held_at);
+                            self.after_drop = true;
+                        }
+                        // vte runs these after ending an OSC; BEL it doesn't.
+                        0x18 | 0x1a => out.pass(i),
+                        _ => {}
                     }
                 }
                 (State::Dropping, _) => self.len += 1,

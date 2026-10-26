@@ -300,3 +300,35 @@ fn the_scanner_changes_nothing_for_normal_output() {
         assert_eq!(seen(&ours_rx), seen(&theirs_rx), "case {case}: {stream:?}");
     }
 }
+
+/// Dropping an oversized OSC drops only the OSC: control bytes around it run
+/// as they would in vte, which shows the same screen as for a short OSC.
+#[test]
+fn dropping_a_sequence_keeps_the_bytes_around_it() {
+    use alacritty_terminal::term::{Config, Term};
+    use alacritty_terminal::vte::ansi::Processor;
+    let size = GridSize { rows: 4, cols: 12 };
+    let screen = |t: &Term<Listener>| {
+        let grid = t.grid();
+        let rows: Vec<String> = (0..grid.screen_lines() as i32).map(|l| (0..grid.columns()).map(|c| grid[Line(l)][Column(c)].c).collect()).collect();
+        (rows, grid.cursor.point)
+    };
+    // Before `]`: vte runs LF and CR in its escape state. After the OSC: SUB and CAN run too.
+    let prefixes: [&[u8]; 3] = [b"ab\x1b]0;", b"ab\x1b\n\r]0;", b"ab\x1b\n]0;"];
+    let ends: [&[u8]; 4] = [b"\x07", b"\x1a", b"\x18", b"\x1b\\"];
+    for prefix in prefixes {
+        for end in ends {
+            let (mut ours, _, _) = engine(size.rows, size.cols);
+            ours.advance(prefix);
+            ours.advance(&vec![b'x'; 3 * 1024 * 1024]);
+            ours.advance(end);
+            ours.advance(b"cd");
+
+            let (tx, _rx) = async_channel::unbounded();
+            let mut term = Term::new(Config { scrolling_history: 100, kitty_keyboard: true, ..Config::default() }, &size, Listener::new(|_| {}, tx));
+            let mut parser: Processor = Processor::new();
+            parser.advance(&mut term, &[prefix, b"x", end, b"cd"].concat());
+            assert_eq!(screen(&ours.term), screen(&term), "{prefix:?} … {end:?}");
+        }
+    }
+}
