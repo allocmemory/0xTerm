@@ -3,6 +3,26 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [0.2.2] - 2026-10-25
+
+Hardening from a review of how 0xTerm handles text it didn't write: file
+names, links and program output. Updating is recommended; details in
+[GHSA-ghxv-7pf7-wh3j](https://github.com/allocmemory/0xTerm/security/advisories/GHSA-ghxv-7pf7-wh3j).
+
+### Security
+
+- cd Here, Insert Path and dropping a path quote file names with unusual
+  characters (control characters, quotes) correctly for the shell in use.
+- ⌘-clicking a link opens files in the viewer, and only web and mail links
+  outside 0xTerm. Links whose text can differ from their target (OSC 8,
+  Markdown) ask before opening.
+- Limits on clipboard writes from programs (1 MB, with a notice), on the
+  length of escape sequences, and on Mermaid diagram size and render time.
+
+### Changed
+
+- Links with other schemes (`vscode://`, `ssh://`, `ftp://`) no longer open.
+
 ## [0.2.1] - 2026-10-25
 
 ### Fixed
