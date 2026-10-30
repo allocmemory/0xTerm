@@ -1,7 +1,7 @@
 //! `[app] icon`: shows the chosen icon at launch and whenever config.toml
 //! changes it. A choice that can't be found or loaded shows the built-in icon.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 
 use oxt_config::{Config, IconChoice};
@@ -12,6 +12,13 @@ thread_local! {
     /// The `icon` value last applied, so a reload that changed something else
     /// doesn't touch the bundle.
     static APPLIED: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// What the last apply managed, for Settings to explain.
+    static RESULT: Cell<Option<IconApplied>> = const { Cell::new(None) };
+}
+
+/// What the last change of icon managed to do, if one happened this run.
+pub fn last_applied() -> Option<IconApplied> {
+    RESULT.with(Cell::get)
 }
 
 /// The file a choice points at, if it exists.
@@ -57,6 +64,7 @@ pub fn apply(config: &Config) -> IconApplied {
         eprintln!("0xTerm: icon {:?} couldn't be loaded, showing the built-in icon", config.app.icon);
         macos::set_app_icon(None);
     }
+    RESULT.with(|result| result.set(Some(applied)));
     applied
 }
 

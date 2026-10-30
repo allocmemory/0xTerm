@@ -59,6 +59,7 @@ pub fn watch(cx: &mut App) {
 }
 
 fn apply(cx: &mut App) {
+    crate::settings_window::refresh();
     let (config, error) = Config::load();
     if let Some(error) = error {
         eprintln!("0xTerm: config error, keeping the current settings: {error}");

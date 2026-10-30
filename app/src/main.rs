@@ -4,6 +4,7 @@ mod config_watch;
 mod icon;
 mod macos;
 mod menus;
+mod settings_window;
 
 use std::path::PathBuf;
 
@@ -14,7 +15,7 @@ use oxt_window::Workspace;
 
 actions!(oxterm, [Quit, NewWindow, OpenSettings]);
 
-/// Written by Settings… when there's no config file yet.
+/// Written by Settings' "Edit config.toml…" when there's no config file yet.
 const STARTER_CONFIG: &str = "\
 # 0xTerm settings. Anything you set here overrides the defaults, and every
 # open window picks it up when you save. The defaults, with notes:
@@ -117,7 +118,8 @@ fn open_urls(urls: Vec<String>, cx: &mut App) {
 }
 
 /// Shows config.toml in the viewer, creating a starter file the first time.
-fn open_settings(cx: &mut App) {
+/// Settings' "Edit config.toml…" leads here, for the keys it doesn't show.
+fn open_config_file(cx: &mut App) {
     let Some(path) = Config::path() else { return };
     if !path.exists() {
         let written = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(&path, STARTER_CONFIG));
@@ -156,8 +158,16 @@ fn main() {
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-n", NewWindow, None)]);
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.on_action(|_: &NewWindow, cx| _ = open_workspace(None, cx));
-        // Deferred: it updates the focused window, which GPUI is updating while it runs actions.
-        cx.on_action(|_: &OpenSettings, cx| cx.defer(open_settings));
+        cx.on_action(|_: &OpenSettings, _| settings_window::show());
+        let (open_config_tx, open_config_rx) = async_channel::unbounded::<()>();
+        settings_window::set_open_config(open_config_tx);
+        cx.spawn(async move |cx| {
+            while open_config_rx.recv().await.is_ok() {
+                // Deferred: it updates the focused window, which GPUI may be updating.
+                cx.update(|cx| cx.defer(open_config_file));
+            }
+        })
+        .detach();
         cx.bind_keys([KeyBinding::new("cmd-,", OpenSettings, None)]);
         macos::start_updater();
         menus::install(cx);

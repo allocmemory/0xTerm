@@ -33,6 +33,8 @@ merman = { version = "0.8", default-features = false, features = ["all-diagrams"
 notify = "8.2"
 # Sparkle and the standard About panel are reached through the Objective-C runtime.
 objc2 = "0.6"
+# The Settings window is plain AppKit: native controls, toolbar and open panel.
+objc2-app-kit = "0.3"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString"] }
 regex-syntax = "0.8"
 resvg = "0.48"

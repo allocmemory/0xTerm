@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 
 use crate::Config;
 
+/// The official set shipped in the app, in the order Settings and 0xterm.org show it.
+pub const OFFICIAL: [&str; 12] =
+    ["chrome", "graphite", "midnight", "ivory", "amber", "mint", "ocean", "crimson", "violet", "phosphor", "mono", "glass"];
+
 /// Imports larger than this are refused: an icon is a few hundred KB at most.
 pub const MAX_IMPORT_BYTES: u64 = 10 * 1024 * 1024;
 

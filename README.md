@@ -106,8 +106,11 @@ Right-click a pane to split or close it. Right-click the file tree for
 ## Configuration
 
 0xTerm reads `~/.config/0xterm/config.toml` (or `$XDG_CONFIG_HOME/0xterm/`).
-**0xTerm → Settings…** (⌘,) shows it in the viewer, and creates it the first
-time.
+**0xTerm → Settings…** (⌘,) opens the Settings window: the app icon, font,
+shell, scrollback, the Option key and the theme. Each change is written to
+config.toml right away, leaving your comments and other keys as they are.
+Theme colors are set in the file; **Edit config.toml…** in Settings shows it in
+the viewer, and creates it the first time.
 Every key is optional; anything you leave out keeps the default shown here.
 Changes apply to open windows as soon as you save.
 
@@ -148,7 +151,9 @@ the file name of your own `.svg` or `.icns` placed in `~/.config/0xterm/icons/`:
 `icon = "mine.svg"`. The Dock changes when you save, and the icon stays after
 you quit, in the Dock, Finder, Launchpad and Spotlight, because 0xTerm sets it
 as the app's Finder icon. After an update it's set again on the first launch.
-A file that's missing or can't be loaded shows the built-in icon.
+A file that's missing or can't be loaded shows the built-in icon. In Settings,
+the Icon pane does all of this: click a tile, or **Import…** copies a file into
+that folder and selects it.
 
 A custom Finder icon is a file inside 0xTerm.app, so `codesign --verify
 --strict` reports the app as modified while one is set. Gatekeeper still
