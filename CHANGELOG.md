@@ -3,6 +3,33 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [0.3.0] - 2026-10-30
+
+### Added
+
+- A Settings window (⌘,) with panes for the app icon, font, shell,
+  scrollback, the Option key and the theme. Each change is saved to
+  config.toml right away, and your comments and other keys stay as they are.
+  If config.toml has an error, the window shows it and changes nothing until
+  it's fixed.
+- Twelve official app icons: chrome, graphite, midnight, ivory, amber, mint,
+  ocean, crimson, violet, phosphor, mono and glass. Pick one in Settings, or
+  import your own `.svg` or `.icns`. They're also at
+  [0xterm.org/icons](https://0xterm.org/icons/).
+- `[app] icon` in config.toml. The Dock changes as soon as you save, and the
+  icon stays after you quit and after updates.
+
+### Changed
+
+- Settings… (⌘,) opens the Settings window instead of the config file. Its
+  **Edit config.toml…** button opens the file, where theme colors are set.
+
+### Known issues
+
+- A custom icon is a file inside 0xTerm.app, so `codesign --verify --strict`
+  reports the app as modified while one is set. Gatekeeper still accepts it,
+  and updates install normally.
+
 ## [0.2.2] - 2026-10-25
 
 Hardening from a review of how 0xTerm handles text it didn't write: file

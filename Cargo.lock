@@ -5213,7 +5213,7 @@ dependencies = [
 
 [[package]]
 name = "oxt-config"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "serde",
  "toml 1.1.8+spec-1.1.0",
@@ -5222,7 +5222,7 @@ dependencies = [
 
 [[package]]
 name = "oxt-session"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "alacritty_terminal",
  "async-channel",
@@ -5231,14 +5231,14 @@ dependencies = [
 
 [[package]]
 name = "oxt-task"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "oxt-terminal-view"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "async-channel",
  "gpui-kit",
@@ -5249,7 +5249,7 @@ dependencies = [
 
 [[package]]
 name = "oxt-toolbelt"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "async-channel",
  "gpui-kit",
@@ -5268,7 +5268,7 @@ dependencies = [
 
 [[package]]
 name = "oxt-window"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "async-channel",
  "gpui-kit",
@@ -5282,7 +5282,7 @@ dependencies = [
 
 [[package]]
 name = "oxterm"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "async-channel",
  "gpui-kit",
