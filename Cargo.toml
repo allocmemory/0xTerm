@@ -38,6 +38,8 @@ regex-syntax = "0.8"
 resvg = "0.48"
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+# Settings writes one key back to the user's config.toml without losing their comments.
+toml_edit = "0.25"
 url = "2"
 
 # Dependencies optimized even in debug builds: an unoptimized parser and text

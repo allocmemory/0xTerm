@@ -5,13 +5,25 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
+pub mod edit;
+pub mod icon;
+
+pub use icon::IconChoice;
+
 const DEFAULT: &str = include_str!("default.toml");
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Config {
+    pub app: App,
     pub font: Font,
     pub terminal: Terminal,
     pub theme: Theme,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct App {
+    /// See [`IconChoice::parse`].
+    pub icon: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
