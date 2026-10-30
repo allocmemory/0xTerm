@@ -24,6 +24,10 @@ ditto "$sparkle/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 xcrun actool "$PWD/assets/AppIcon.icon" --compile "$PWD/$app/Contents/Resources" --app-icon AppIcon \
   --platform macosx --target-device mac --minimum-deployment-target 13.0 \
   --output-partial-info-plist "$(mktemp -d)/icon.plist" > /dev/null
+# The official icon set, which Settings can switch the app to.
+icons=$(packaging/icons.sh)
+mkdir -p "$app/Contents/Resources/Icons"
+cp "$icons"/*.icns "$app/Contents/Resources/Icons/"
 sed -e "s/__VERSION__/$version/" -e "s/__BUILD__/$build/" packaging/Info.plist > "$app/Contents/Info.plist"
 
 sign() {

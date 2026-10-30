@@ -64,6 +64,7 @@ fn apply(cx: &mut App) {
         eprintln!("0xTerm: config error, keeping the current settings: {error}");
         return;
     }
+    crate::icon::apply_if_changed(&config);
     let targets = cx.try_global::<Workspaces>().map(|w| w.0.clone()).unwrap_or_default();
     for (window, workspace) in targets {
         let Some(workspace) = workspace.upgrade() else { continue };

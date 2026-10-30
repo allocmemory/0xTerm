@@ -1,6 +1,7 @@
 //! 0xTerm: start the app, install the menu bar, open the first window.
 
 mod config_watch;
+mod icon;
 mod macos;
 mod menus;
 
@@ -160,6 +161,7 @@ fn main() {
         cx.bind_keys([KeyBinding::new("cmd-,", OpenSettings, None)]);
         macos::start_updater();
         menus::install(cx);
+        icon::apply_at_launch(&Config::load().0);
         config_watch::watch(cx);
 
         // Launched by opening a folder or file: open that instead of a window at home.

@@ -112,6 +112,9 @@ Every key is optional; anything you leave out keeps the default shown here.
 Changes apply to open windows as soon as you save.
 
 ```toml
+[app]
+icon = ""             # empty is the built-in icon; see "App icon" below
+
 [font]
 family = "Menlo"
 size = 13.0
@@ -135,6 +138,22 @@ selection = "#264f78"
 
 `[theme.light]` takes the same keys. The full defaults are in
 [`crates/oxt-config/src/default.toml`](crates/oxt-config/src/default.toml).
+
+### App icon
+
+`icon` takes a name from the official set (chrome, graphite, midnight, ivory,
+amber, mint, ocean, crimson, violet, phosphor, mono, glass), previewed and
+downloadable at [0xterm.org/icons](https://0xterm.org/icons/). It also takes
+the file name of your own `.svg` or `.icns` placed in `~/.config/0xterm/icons/`:
+`icon = "mine.svg"`. The Dock changes when you save, and the icon stays after
+you quit, in the Dock, Finder, Launchpad and Spotlight, because 0xTerm sets it
+as the app's Finder icon. After an update it's set again on the first launch.
+A file that's missing or can't be loaded shows the built-in icon.
+
+A custom Finder icon is a file inside 0xTerm.app, so `codesign --verify
+--strict` reports the app as modified while one is set. Gatekeeper still
+accepts the app as notarized, and updates install normally. Set `icon = ""` to
+remove it.
 
 ## Build from source
 
