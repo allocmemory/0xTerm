@@ -95,6 +95,7 @@ open a window there. A text file opens in the viewer.
 | ⌘B | show or hide the sidebar |
 | ⇧⌘B | show or hide the viewer |
 | ⌘S | save the file in the viewer |
+| ⌥⌘N | new file |
 | ⇧⌘F | search the folder |
 | ⌘F | find in the open file |
 | ⌥⌘F | find and replace in the viewer |
@@ -106,7 +107,7 @@ open a window there. A text file opens in the viewer.
 | ⌘-click | open a `path:line` or a URL |
 
 Right-click a pane to split or close it. Right-click the file tree for
-**cd Here**, **New Tab Here**, **Insert Path** and **Copy Path**.
+**cd Here**, **New Tab Here**, **New File…**, **Insert Path** and **Copy Path**.
 Tab and ⇧Tab indent in the viewer; ⌘[ and ⌘] still switch panes there.
 
 ## Configuration

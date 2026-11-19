@@ -25,6 +25,8 @@ pub enum ToolbeltEvent {
     /// `cd` the active pane here.
     CdHere(PathBuf),
     NewTabHere(PathBuf),
+    /// Ask for a name in this folder, create the file and open it.
+    NewFileIn(PathBuf),
     /// A URL clicked in a Markdown preview. The window decides where it may go.
     OpenUrl(String),
 }
