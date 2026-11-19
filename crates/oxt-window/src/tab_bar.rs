@@ -15,7 +15,8 @@ pub(crate) fn render_title_row(ws: &Workspace, cx: &mut Context<Workspace>) -> i
     for (i, tab) in ws.tabs.iter().enumerate() {
         let on = i == ws.active;
         let label = tab.label();
-        let renaming = ws.renaming.as_ref().filter(|r| r.tab == i).map(|r| r.input.clone());
+        let tab_id = tab.id;
+        let renaming = ws.renaming.as_ref().filter(|r| r.tab == tab_id).map(|r| r.input.clone());
         let name: AnyElement = match &renaming {
             Some(input) => div()
                 .flex_1()
@@ -47,8 +48,13 @@ pub(crate) fn render_title_row(ws: &Workspace, cx: &mut Context<Workspace>) -> i
                 // Room to type while renaming.
                 .when(editing, |d| d.min_w(px(180.)))
                 .on_click(cx.listener(move |ws, event: &ClickEvent, window, cx| {
-                    // Clicks in the name field are for the field.
-                    if event.modifiers().platform || ws.renaming.as_ref().is_some_and(|r| r.tab == i) {
+                    // Clicks in the name field are for the field, and a
+                    // double-click there selects a word, never zooms the window.
+                    if ws.renaming.as_ref().is_some_and(|r| r.tab == tab_id) {
+                        cx.stop_propagation();
+                        return;
+                    }
+                    if event.modifiers().platform {
                         return;
                     }
                     ws.activate_tab(i, window, cx);
@@ -59,15 +65,25 @@ pub(crate) fn render_title_row(ws: &Workspace, cx: &mut Context<Workspace>) -> i
                     }
                 }))
                 .on_mouse_down(MouseButton::Middle, cx.listener(move |ws, _, window, cx| ws.close_tab(i, window, cx)))
+                // The menu outlives this frame, so it finds its tab by id when
+                // clicked: tabs may have closed and shifted while it was open.
                 .context_menu(move |menu, _, _| {
                     let (rename_ws, close_ws) = (menu_ws.clone(), menu_ws.clone());
                     menu.item(PopupMenuItem::new("Rename Tab…").on_click(move |_, window, cx| {
                         rename_ws.update(cx, |ws, cx| {
-                            ws.activate_tab(i, window, cx);
-                            ws.start_rename(i, window, cx);
+                            if let Some(i) = ws.tab_index(tab_id) {
+                                ws.activate_tab(i, window, cx);
+                                ws.start_rename(i, window, cx);
+                            }
                         })
                     }))
-                    .item(PopupMenuItem::new("Close Tab").on_click(move |_, window, cx| close_ws.update(cx, |ws, cx| ws.close_tab(i, window, cx))))
+                    .item(PopupMenuItem::new("Close Tab").on_click(move |_, window, cx| {
+                        close_ws.update(cx, |ws, cx| {
+                            if let Some(i) = ws.tab_index(tab_id) {
+                                ws.close_tab(i, window, cx);
+                            }
+                        })
+                    }))
                 })
                 .child(name)
                 .when(!editing, |d| {

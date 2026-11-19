@@ -66,6 +66,9 @@ pub fn bind_keys(cx: &mut App) {
 }
 
 pub(crate) struct Tab {
+    /// Names this tab for its whole life (its first pane's id), so something
+    /// held across events, like an open menu, finds it after tabs shift.
+    pub id: PaneId,
     pub root: Node<PaneId>,
     pub panes: HashMap<PaneId, Pane>,
     pub active: PaneId,
@@ -90,10 +93,19 @@ pub(crate) fn clean_tab_name(typed: &str) -> Option<SharedString> {
     (!name.is_empty()).then(|| SharedString::from(name.to_owned()))
 }
 
+/// The tab's name after a rename. A field committed as it opened leaves the
+/// tab as it was, so clicking away from an accidental rename doesn't freeze
+/// an automatic name like `vim` in place.
+pub(crate) fn renamed(typed: &str, opened_with: &str, before: Option<SharedString>) -> Option<SharedString> {
+    if typed == opened_with { before } else { clean_tab_name(typed) }
+}
+
 /// A tab being renamed in place.
 pub(crate) struct Rename {
-    pub tab: usize,
+    /// The tab's `id`, not its index: other tabs may close meanwhile.
+    pub tab: PaneId,
     pub input: Entity<InputState>,
+    opened_with: SharedString,
     _events: Subscription,
 }
 
@@ -295,7 +307,7 @@ impl Workspace {
 
     fn new_tab_in(&mut self, cwd: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         if let Some((id, pane)) = self.spawn_pane(cwd, window, cx) {
-            let tab = Tab { root: Node::Leaf(id), panes: HashMap::from([(id, pane)]), active: id, name: None };
+            let tab = Tab { id, root: Node::Leaf(id), panes: HashMap::from([(id, pane)]), active: id, name: None };
             self.tabs.push(tab);
             self.active = self.tabs.len() - 1;
             self.focus_active(window, cx);
@@ -345,8 +357,10 @@ impl Workspace {
         if index >= self.tabs.len() {
             return;
         }
-        // Indexes shift, so a rename in progress ends here.
-        self.renaming = None;
+        let closing = self.tabs[index].id;
+        if self.renaming.as_ref().is_some_and(|r| r.tab == closing) {
+            self.renaming = None;
+        }
         self.tabs.remove(index);
         if self.tabs.is_empty() {
             window.remove_window();
@@ -355,20 +369,28 @@ impl Workspace {
         if self.active > index || self.active >= self.tabs.len() {
             self.active = self.active.saturating_sub(1);
         }
-        self.focus_active(window, cx);
+        // A rename in another tab keeps the keyboard; typing mustn't land in a shell.
+        if self.renaming.is_none() {
+            self.focus_active(window, cx);
+        }
         cx.notify();
+    }
+
+    /// Where the tab with this `id` is now.
+    pub(crate) fn tab_index(&self, id: PaneId) -> Option<usize> {
+        self.tabs.iter().position(|t| t.id == id)
     }
 
     /// Puts a text field in the tab's place, holding its name selected.
     pub(crate) fn start_rename(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.renaming.as_ref().is_some_and(|r| r.tab == index) {
+        let Some(tab) = self.tabs.get(index) else { return };
+        if self.renaming.as_ref().is_some_and(|r| r.tab == tab.id) {
             return;
         }
-        let Some(tab) = self.tabs.get(index) else { return };
-        let label = tab.label();
+        let (id, label) = (tab.id, tab.label());
         let input = cx.new(|cx| InputState::new(window, cx));
         input.update(cx, |input, cx| {
-            input.set_value(label, window, cx);
+            input.set_value(label.clone(), window, cx);
             input.select_all(window, cx);
             input.focus(window, cx);
         });
@@ -377,7 +399,7 @@ impl Workspace {
                 ws.finish_rename(true, window, cx);
             }
         });
-        self.renaming = Some(Rename { tab: index, input, _events: events });
+        self.renaming = Some(Rename { tab: id, input, opened_with: label, _events: events });
         cx.notify();
     }
 
@@ -385,8 +407,10 @@ impl Workspace {
     /// tab as it was. An empty name goes back to the automatic one.
     pub(crate) fn finish_rename(&mut self, keep: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(rename) = self.renaming.take() else { return };
-        if keep && let Some(tab) = self.tabs.get_mut(rename.tab) {
-            tab.name = clean_tab_name(&rename.input.read(cx).value());
+        if keep && let Some(i) = self.tab_index(rename.tab) {
+            let typed = rename.input.read(cx).value();
+            let tab = &mut self.tabs[i];
+            tab.name = renamed(&typed, &rename.opened_with, tab.name.take());
         }
         let title = self.active_tab().map(|t| t.label()).unwrap_or_default();
         window.set_window_title(&title);
@@ -729,7 +753,20 @@ impl Render for Workspace {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: GPUI's glob brings its own `test` attribute.
-    use super::{MAX_TAB_NAME, clean_tab_name};
+    use super::{MAX_TAB_NAME, clean_tab_name, renamed};
+    use gpui_kit::SharedString;
+
+    #[test]
+    fn an_untouched_rename_leaves_the_tab_as_it_was() {
+        // Automatic label committed unchanged: still automatic.
+        assert_eq!(renamed("vim", "vim", None), None);
+        // A custom name committed unchanged: kept.
+        assert_eq!(renamed("api", "api", Some(SharedString::from("api"))).as_deref(), Some("api"));
+        // Typed over the automatic label: a custom name.
+        assert_eq!(renamed("logs", "vim", None).as_deref(), Some("logs"));
+        // Cleared: back to automatic.
+        assert_eq!(renamed("", "api", Some(SharedString::from("api"))), None);
+    }
 
     #[test]
     fn tab_names_are_trimmed_and_empty_means_automatic() {
