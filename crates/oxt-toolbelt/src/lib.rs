@@ -11,4 +11,4 @@ pub mod viewer;
 
 pub use events::{DraggedPath, OpenRequest, Shell, ToolbeltEvent, shell_quote};
 pub use sidebar::{Sidebar, SidebarMode};
-pub use viewer::Viewer;
+pub use viewer::{Save, Viewer};

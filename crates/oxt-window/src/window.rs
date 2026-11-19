@@ -14,7 +14,7 @@ use oxt_config::{Chrome, Config};
 use oxt_session::{MAX_COPY, SessionOptions};
 use oxt_task::Command;
 use oxt_terminal_view::{TerminalEvent, TerminalStyle, TerminalView};
-use oxt_toolbelt::{Sidebar, ToolbeltEvent, Viewer, shell_quote};
+use oxt_toolbelt::{OpenRequest, Save, Sidebar, ToolbeltEvent, Viewer, shell_quote};
 
 use crate::links::{self, Route, Source};
 use crate::notices;
@@ -37,7 +37,8 @@ actions!(
         ToggleSidebar,
         ToggleViewer,
         SearchFolder,
-        FindInFile
+        FindInFile,
+        NewFile
     ]
 );
 
@@ -60,6 +61,9 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-b", ToggleViewer, None),
         KeyBinding::new("cmd-shift-f", SearchFolder, None),
         KeyBinding::new("cmd-f", FindInFile, None),
+        // Handled by the viewer when focus is in it; elsewhere it does nothing.
+        KeyBinding::new("cmd-s", Save, None),
+        KeyBinding::new("alt-cmd-n", NewFile, None),
     ]);
 }
 
@@ -408,6 +412,7 @@ impl Workspace {
                 self.focus_active(window, cx);
             }
             ToolbeltEvent::NewTabHere(dir) => self.new_tab_in(Some(dir.clone()), window, cx),
+            ToolbeltEvent::NewFileIn(dir) => self.new_file_in(dir.clone(), window, cx),
             ToolbeltEvent::OpenUrl(url) => self.open_url(url, Source::Markdown, window, cx),
         }
     }
@@ -432,6 +437,22 @@ impl Workspace {
             },
             None => {}
         }
+    }
+
+    /// Asks for a name with the system save panel, creates an empty file and
+    /// opens it in the viewer. A name that already exists opens that file as
+    /// it is: the panel's "Replace" never empties a file here.
+    fn new_file_in(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let chosen = cx.prompt_for_new_path(&dir, Some("untitled.txt"));
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(path))) = chosen.await else { return };
+            let created = oxt_toolbelt::viewer::save::create(&path);
+            let _ = this.update_in(cx, |this, window, cx| match created {
+                Ok(_) => this.open(OpenRequest::path(path), window, cx),
+                Err(e) => window.push_notification(Notification::error(format!("Couldn't create the file: {e}")), cx),
+            });
+        })
+        .detach();
     }
 
     /// Opens a file in the viewer, as if clicked in the tree.
@@ -651,6 +672,10 @@ impl Render for Workspace {
                     this.viewer.update(cx, |viewer, cx| viewer.focus_find(window, cx));
                     cx.notify();
                 }
+            }))
+            .on_action(cx.listener(|this, _: &NewFile, window, cx| {
+                let dir = this.active_cwd(cx).or_else(|| std::env::var_os("HOME").map(PathBuf::from)).unwrap_or_else(|| "/".into());
+                this.new_file_in(dir, window, cx);
             }))
             .on_action(cx.listener(|this, _: &SearchFolder, window, cx| {
                 this.sidebar_open = true;
