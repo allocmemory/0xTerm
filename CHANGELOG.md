@@ -3,6 +3,14 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+
+- Settings › Icon no longer opens a wide gap between columns, which showed
+  up after picking an icon. Tiles now have one width and the grid keeps its
+  size.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added

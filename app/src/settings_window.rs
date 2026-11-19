@@ -382,6 +382,25 @@ impl Controller {
             }
         }
         self.fit_window();
+        // Debug builds: OXTERM_SETTINGS_LAYOUT=1 prints where each icon tile
+        // lands after a refresh, to check the grid without screen capture.
+        #[cfg(debug_assertions)]
+        if std::env::var_os("OXTERM_SETTINGS_LAYOUT").is_some() {
+            if let Some(content) = ivars.window.contentView() {
+                content.layoutSubtreeIfNeeded();
+            }
+            self.with_widgets(|w| {
+                let tiles: Vec<String> = w
+                    .icon_buttons
+                    .iter()
+                    .map(|(value, b)| {
+                        let f = b.convertRect_toView(b.bounds(), None);
+                        format!("{}@{:.0},{:.0}w{:.0}", if value.is_empty() { "default" } else { value }, f.origin.x, f.origin.y, f.size.width)
+                    })
+                    .collect();
+                eprintln!("OXTERM_SETTINGS_LAYOUT: {}", tiles.join(" "));
+            });
+        }
     }
 
     fn refresh_values(&self) {
@@ -431,6 +450,9 @@ impl Controller {
                 b.setBezelStyle(NSBezelStyle::SmallSquare);
                 b.setImagePosition(NSCellImagePosition::ImageAbove);
                 b.setTag(i as isize);
+                // Every tile the same width, whatever its title, so columns line up.
+                b.setTranslatesAutoresizingMaskIntoConstraints(false);
+                b.widthAnchor().constraintEqualToConstant(TILE).setActive(true);
                 if let Some(image) = path.as_deref().and_then(load_image) {
                     image.setSize(NSSize::new(TILE - 16.0, TILE - 16.0));
                     b.setImage(Some(&image));
@@ -449,13 +471,18 @@ impl Controller {
         let grid = NSGridView::gridViewWithViews(&NSArray::from_retained_slice(&rows), mtm);
         grid.setRowSpacing(8.0);
         grid.setColumnSpacing(8.0);
+        for column in 0..grid.numberOfColumns() {
+            grid.columnAtIndex(column).setWidth(TILE);
+        }
 
         self.with_widgets(|w| {
             for view in w.icon_grid.subviews().iter() {
                 view.removeFromSuperview();
             }
             w.icon_grid.addSubview(&grid);
-            pin(&grid, &w.icon_grid);
+            // Leading, not stretched: the pane is wider than the tiles, and a
+            // grid pinned to both edges spread that slack into one column.
+            pin_leading(&grid, &w.icon_grid);
         });
         if let Some(w) = self.ivars().widgets.borrow_mut().as_mut() {
             w.icon_buttons = buttons;
@@ -666,6 +693,16 @@ fn form(rows: &[(&str, &NSView)], mtm: MainThreadMarker) -> Retained<NSView> {
     grid.columnAtIndex(0).setXPlacement(objc2_app_kit::NSGridCellPlacement::Trailing);
     grid.columnAtIndex(1).setWidth(280.0);
     Retained::into_super(grid)
+}
+
+/// Pins `view` to `parent`'s top, bottom and leading edges, at its own
+/// width, never wider than `parent`.
+fn pin_leading(view: &NSView, parent: &NSView) {
+    view.setTranslatesAutoresizingMaskIntoConstraints(false);
+    view.leadingAnchor().constraintEqualToAnchor(&parent.leadingAnchor()).setActive(true);
+    view.trailingAnchor().constraintLessThanOrEqualToAnchor(&parent.trailingAnchor()).setActive(true);
+    view.topAnchor().constraintEqualToAnchor(&parent.topAnchor()).setActive(true);
+    view.bottomAnchor().constraintEqualToAnchor(&parent.bottomAnchor()).setActive(true);
 }
 
 /// Pins `view` to `parent`'s edges with Auto Layout.
