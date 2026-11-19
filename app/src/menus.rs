@@ -3,6 +3,7 @@
 
 use gpui_kit::*;
 use oxt_terminal_view::{Clear, Copy, Paste, SelectAll};
+use oxt_toolbelt::Save;
 use oxt_window::{ClosePane, CloseTab, NewTab, NextPane, NextTab, PreviousPane, PreviousTab, SplitDown, SplitRight, ToggleSidebar, ToggleViewer};
 
 use crate::{NewWindow, OpenSettings, Quit, macos};
@@ -51,6 +52,7 @@ pub fn install(cx: &mut App) {
             items: vec![
                 MenuItem::action("New Window", NewWindow),
                 MenuItem::action("New Tab", NewTab),
+                MenuItem::action("Save", Save),
                 MenuItem::separator(),
                 MenuItem::action("Split Right", SplitRight),
                 MenuItem::action("Split Down", SplitDown),

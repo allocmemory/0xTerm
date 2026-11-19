@@ -17,7 +17,7 @@
   <img src="docs/screenshot.png" alt="0xTerm: the file tree, a shell with grep output, and the file viewer open at a find match">
 </p>
 
-0xTerm is a terminal for the Mac with file search and a file viewer built in.
+0xTerm is a terminal for the Mac with file search and a file editor built in.
 It's written from scratch in Rust, and every frame is drawn through Metal.
 
 ## Why
@@ -47,8 +47,11 @@ and nothing else.
   tree updates live.
 - **Folder search.** Ripgrep-style search of the whole folder, off the main
   thread, grouped by file. Click a hit to open it at that line.
-- **A file viewer beside the shell.** Syntax highlighting, line numbers and
-  ⌘F find with a match count. It reloads when the file changes on disk.
+- **A file editor beside the shell.** Syntax highlighting, line numbers,
+  ⌘F find with a match count, and ⌘S to save. Tabs follow the file as it
+  changes on disk; if it changes while you have unsaved edits, you choose
+  which copy to keep. Files that aren't UTF-8 open read-only, so saving can
+  never mangle them.
 - **Markdown and Mermaid preview.** Markdown renders as a document, and
   Mermaid diagrams are drawn natively, with no browser in the app.
 - **⌘-click a path.** Any `path:line` in the output opens the viewer at that
@@ -91,8 +94,10 @@ open a window there. A text file opens in the viewer.
 | ⇧⌘[ / ⇧⌘], ⌃⇥ / ⌃⇧⇥ | previous / next tab |
 | ⌘B | show or hide the sidebar |
 | ⇧⌘B | show or hide the viewer |
+| ⌘S | save the file in the viewer |
 | ⇧⌘F | search the folder |
 | ⌘F | find in the open file |
+| ⌥⌘F | find and replace in the viewer |
 | ⌘K | clear the terminal |
 | ⌘C / ⌘V / ⌘A | copy / paste / select all |
 | ⌘, | open the config file |
@@ -102,6 +107,7 @@ open a window there. A text file opens in the viewer.
 
 Right-click a pane to split or close it. Right-click the file tree for
 **cd Here**, **New Tab Here**, **Insert Path** and **Copy Path**.
+Tab and ⇧Tab indent in the viewer; ⌘[ and ⌘] still switch panes there.
 
 ## Configuration
 
@@ -109,8 +115,8 @@ Right-click a pane to split or close it. Right-click the file tree for
 **0xTerm → Settings…** (⌘,) opens the Settings window: the app icon, font,
 shell, scrollback, the Option key and the theme. Each change is written to
 config.toml right away, leaving your comments and other keys as they are.
-Theme colors are set in the file; **Edit config.toml…** in Settings shows it in
-the viewer, and creates it the first time.
+Theme colors are set in the file; **Edit config.toml…** in Settings opens it in
+the viewer to edit and save, and creates it the first time.
 Every key is optional; anything you leave out keeps the default shown here.
 Changes apply to open windows as soon as you save.
 
@@ -209,7 +215,7 @@ such as "open this file at this line" or "the working folder changed".
 | [`oxt-session`](crates/oxt-session) | terminal state; key, paste and mouse encoding; OSC 7 |
 | [`oxt-terminal-view`](crates/oxt-terminal-view) | draws the grid; selection, links, input |
 | [`oxt-window`](crates/oxt-window) | tabs, splits, panes |
-| [`oxt-toolbelt`](crates/oxt-toolbelt) | file tree, folder search, viewer, Markdown and Mermaid |
+| [`oxt-toolbelt`](crates/oxt-toolbelt) | file tree, folder search, viewer and editor, Markdown and Mermaid |
 | [`oxt-config`](crates/oxt-config) | config file and themes |
 | [`app`](app) | the `oxterm` binary: menus, windows, config reload, updates |
 
