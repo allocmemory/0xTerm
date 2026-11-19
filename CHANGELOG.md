@@ -18,9 +18,6 @@ All notable changes to 0xTerm are listed here. Versions follow
   your text and asks: **Reload** or **Keep Mine**. Tabs without edits still
   follow the file as before.
 - Markdown Preview shows unsaved Source edits.
-- **New File…** (⌥⌘N, or right-click the file tree) asks for a name and
-  opens the new file in the viewer. Picking a name that exists opens that file
-  as it is.
 - Quitting or closing a window with unsaved edits asks to save them.
 
 ### Changed

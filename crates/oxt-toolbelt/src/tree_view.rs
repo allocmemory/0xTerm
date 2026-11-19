@@ -208,8 +208,8 @@ impl FileTree {
                     })
                 };
                 let dir = if menu_path.is_dir() { menu_path.clone() } else { menu_path.parent().map(Path::to_path_buf).unwrap_or_default() };
-                let (tree_for_cd, tree_for_tab, tree_for_file) = (tree.clone(), tree.clone(), tree.clone());
-                let (dir_for_cd, dir_for_tab, dir_for_file) = (dir.clone(), dir.clone(), dir);
+                let (tree_for_cd, tree_for_tab) = (tree.clone(), tree.clone());
+                let (dir_for_cd, dir_for_tab) = (dir.clone(), dir);
                 let copy_path = menu_path.clone();
                 menu.item(PopupMenuItem::new("cd Here").on_click(move |_, _, cx| {
                     let event = ToolbeltEvent::CdHere(dir_for_cd.clone());
@@ -218,10 +218,6 @@ impl FileTree {
                 .item(PopupMenuItem::new("New Tab Here").on_click(move |_, _, cx| {
                     let event = ToolbeltEvent::NewTabHere(dir_for_tab.clone());
                     tree_for_tab.update(cx, |_, cx| cx.emit(event));
-                }))
-                .item(PopupMenuItem::new("New File…").on_click(move |_, _, cx| {
-                    let event = ToolbeltEvent::NewFileIn(dir_for_file.clone());
-                    tree_for_file.update(cx, |_, cx| cx.emit(event));
                 }))
                 .separator()
                 .item(item("Insert Path", ToolbeltEvent::InsertPath))

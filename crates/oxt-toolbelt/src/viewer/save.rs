@@ -1,4 +1,4 @@
-//! Writing a viewer tab back to disk, and creating new files.
+//! Writing a viewer tab back to disk.
 
 use std::ffi::CString;
 use std::fs::{self, File, Metadata, OpenOptions};
@@ -110,16 +110,6 @@ fn resolve(path: &Path) -> PathBuf {
     match fs::read_link(path) {
         Ok(target) => path.parent().map(|dir| dir.join(&target)).unwrap_or(target),
         Err(_) => path.to_path_buf(),
-    }
-}
-
-/// Creates an empty file, never touching one that's already there.
-/// Returns whether it was created.
-pub fn create(path: &Path) -> io::Result<bool> {
-    match OpenOptions::new().write(true).create_new(true).open(path) {
-        Ok(_) => Ok(true),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
-        Err(e) => Err(e),
     }
 }
 
@@ -244,17 +234,6 @@ mod tests {
         assert!(write(&path, "new").is_err());
         assert_eq!(fs::read_to_string(&planted).unwrap(), "not ours");
         assert_eq!(fs::read_to_string(&path).unwrap(), "old");
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn create_never_clobbers() {
-        let dir = dir("create");
-        let path = dir.join("notes.md");
-        assert!(create(&path).unwrap());
-        fs::write(&path, "keep me").unwrap();
-        assert!(!create(&path).unwrap());
-        assert_eq!(fs::read_to_string(&path).unwrap(), "keep me");
         fs::remove_dir_all(&dir).unwrap();
     }
 }

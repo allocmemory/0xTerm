@@ -95,7 +95,6 @@ open a window there. A text file opens in the viewer.
 | ⌘B | show or hide the sidebar |
 | ⇧⌘B | show or hide the viewer |
 | ⌘S | save the file in the viewer |
-| ⌥⌘N | new file |
 | ⇧⌘F | search the folder |
 | ⌘F | find in the open file |
 | ⌥⌘F | find and replace in the viewer |
@@ -107,7 +106,7 @@ open a window there. A text file opens in the viewer.
 | ⌘-click | open a `path:line` or a URL |
 
 Right-click a pane to split or close it. Right-click the file tree for
-**cd Here**, **New Tab Here**, **New File…**, **Insert Path** and **Copy Path**.
+**cd Here**, **New Tab Here**, **Insert Path** and **Copy Path**.
 Tab and ⇧Tab indent in the viewer; ⌘[ and ⌘] still switch panes there.
 
 ## Configuration
@@ -216,7 +215,7 @@ such as "open this file at this line" or "the working folder changed".
 | [`oxt-session`](crates/oxt-session) | terminal state; key, paste and mouse encoding; OSC 7 |
 | [`oxt-terminal-view`](crates/oxt-terminal-view) | draws the grid; selection, links, input |
 | [`oxt-window`](crates/oxt-window) | tabs, splits, panes |
-| [`oxt-toolbelt`](crates/oxt-toolbelt) | file tree, folder search, viewer, Markdown and Mermaid |
+| [`oxt-toolbelt`](crates/oxt-toolbelt) | file tree, folder search, viewer and editor, Markdown and Mermaid |
 | [`oxt-config`](crates/oxt-config) | config file and themes |
 | [`app`](app) | the `oxterm` binary: menus, windows, config reload, updates |
 
