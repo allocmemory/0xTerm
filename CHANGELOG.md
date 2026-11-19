@@ -3,6 +3,15 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+
+- Rename a tab: double-click it, right-click › **Rename Tab…**, or
+  Shell › **Rename Tab…**. Enter keeps the name, Escape cancels, and an empty
+  name goes back to following the running job or folder. The window title
+  follows the name.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added
