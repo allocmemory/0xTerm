@@ -7,10 +7,40 @@ All notable changes to 0xTerm are listed here. Versions follow
 
 ### Added
 
+- The viewer edits files. Click into a tab and type; ⌘S (or Shell › Save)
+  saves. A dot marks a tab with unsaved changes, and closing it asks first.
+  Saving writes a new copy and swaps it in, so a crash never leaves half a
+  file. The file keeps its permissions, ACLs, extended attributes (Finder
+  tags), symlinks and hard links. Files you can't write, and files owned by
+  someone else's account, are handled without replacing them: read-only files
+  open read-only, and others are written in place.
+- If a file changes on disk while its tab has unsaved edits, the tab keeps
+  your text and asks: **Reload** or **Keep Mine**. Tabs without edits still
+  follow the file as before.
+- Markdown Preview shows unsaved Source edits.
+- Quitting or closing a window with unsaved edits asks to save them.
 - Rename a tab: double-click it, right-click › **Rename Tab…**, or
   Shell › **Rename Tab…**. Enter keeps the name, Escape cancels, and an empty
   name goes back to following the running job or folder. The window title
   follows the name.
+
+### Changed
+
+- Files that aren't valid UTF-8 open read-only, marked in the viewer, so
+  saving can't replace characters it couldn't read.
+- In the viewer, ⌘[ and ⌘] switch panes and ⇧⌘F searches the folder, as
+  everywhere else. Find and replace in a file is ⌥⌘F; Tab and ⇧Tab indent.
+
+### Fixed
+
+- Settings › Icon no longer opens a wide gap between columns, which showed
+  up after picking an icon. Tiles now have one width and the grid keeps its
+  size.
+
+### Known issues
+
+- **Quit** from the Dock icon, and logging out, still quit without asking
+  about unsaved edits. ⌘Q and 0xTerm › Quit ask.
 
 ## [0.3.0] - 2026-10-30
 

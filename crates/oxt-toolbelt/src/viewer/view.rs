@@ -1,6 +1,8 @@
-//! The right panel: open files as tabs. Code is a read-only highlighted
-//! editor; Markdown has Preview/Source; images show as images. Files reload
-//! when they change on disk, so `vim` in a pane updates the preview.
+//! The right panel: open files as tabs. Code is a highlighted editor that
+//! saves with ⌘S; Markdown has Preview/Source; images show as images. Clean
+//! tabs reload when the file changes on disk, so `vim` in a pane updates the
+//! preview. A tab with unsaved edits is never reloaded under you: it says the
+//! file changed and lets you pick which copy wins.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -14,9 +16,11 @@ use gpui_kit::*;
 use oxt_config::Chrome;
 
 use crate::events::{OpenRequest, ToolbeltEvent};
-use crate::viewer::load::{self, Content};
+use crate::viewer::load::{self, Content, Loaded};
 use crate::viewer::markdown::{self, Segment};
-use crate::viewer::{find, mermaid};
+use crate::viewer::{find, mermaid, save};
+
+actions!(viewer, [Save]);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -33,6 +37,20 @@ struct Doc {
     editor: Option<Entity<EditorState>>,
     segments: Vec<Segment>,
     preview_scroll: ScrollHandle,
+    /// Valid UTF-8 text: safe to edit and write back.
+    editable: bool,
+    /// The editor differs from the text last read or written.
+    dirty: bool,
+    notice: Option<Notice>,
+    _editor_events: Option<Subscription>,
+}
+
+/// A problem shown above a tab's text until it's resolved.
+#[derive(Clone, Debug, PartialEq)]
+enum Notice {
+    /// The file changed on disk while this tab had unsaved edits.
+    ChangedOnDisk,
+    SaveFailed(String),
 }
 
 impl Doc {
@@ -110,6 +128,27 @@ impl Viewer {
         self.docs.is_empty()
     }
 
+    /// Files with edits that aren't on disk yet.
+    pub fn unsaved(&self) -> Vec<PathBuf> {
+        self.docs.iter().filter(|d| d.dirty).map(|d| d.path.clone()).collect()
+    }
+
+    /// Saves every tab with unsaved edits. False when any is still unsaved,
+    /// because it changed on disk or couldn't be written; those tabs show why.
+    pub fn save_all(&mut self, cx: &mut Context<Self>) -> bool {
+        for i in 0..self.docs.len() {
+            if self.docs[i].dirty {
+                self.save(i, false, cx);
+            }
+        }
+        if let Some(i) = self.docs.iter().position(|d| d.dirty) {
+            self.active = i;
+            cx.notify();
+            return false;
+        }
+        true
+    }
+
     pub fn focus_find(&self, window: &mut Window, cx: &mut App) {
         self.find.update(cx, |find, cx| find.focus(window, cx));
     }
@@ -144,7 +183,7 @@ impl Viewer {
     }
 
     fn load_doc(&self, path: &Path, window: &mut Window, cx: &mut Context<Self>) -> Doc {
-        let content = load::load(path).unwrap_or_else(|e| Content::Text { text: format!("Couldn't read this file: {e}"), language: None });
+        let loaded = load_or_explain(path);
         let mut doc = Doc {
             path: path.to_path_buf(),
             modified: modified(path),
@@ -152,7 +191,11 @@ impl Viewer {
             editor: None,
             segments: Vec::new(),
             preview_scroll: ScrollHandle::new(),
-            content,
+            editable: loaded.editable() && save::writable(path),
+            dirty: false,
+            notice: None,
+            _editor_events: None,
+            content: loaded.content,
         };
         if let Content::Markdown(text) = &doc.content {
             doc.segments = markdown::segments(text);
@@ -161,7 +204,8 @@ impl Viewer {
         doc
     }
 
-    /// Creates the read-only editor a doc needs in its current mode.
+    /// Creates the editor a doc needs in its current mode. It's read-only
+    /// unless the text is exactly what's on disk.
     fn ensure_editor(doc: &mut Doc, window: &mut Window, cx: &mut Context<Self>) {
         if doc.editor.is_some() || !doc.uses_editor() {
             return;
@@ -174,10 +218,101 @@ impl Viewer {
         let editor = cx.new(|cx| {
             let mut editor = EditorState::new(window, cx).language(language).line_number(true).soft_wrap(false);
             editor.set_value(text, window, cx);
-            editor.set_readonly(true, cx);
+            editor.set_readonly(!doc.editable, cx);
             editor
         });
+        doc._editor_events = Some(cx.subscribe(&editor, |viewer, editor, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                viewer.edited(editor.entity_id(), cx);
+            }
+        }));
         doc.editor = Some(editor);
+    }
+
+    /// Marks a tab dirty, or clean again once undo brings it back to the saved text.
+    fn edited(&mut self, editor: EntityId, cx: &mut Context<Self>) {
+        let Some(doc) = self.docs.iter_mut().find(|d| d.editor.as_ref().is_some_and(|e| e.entity_id() == editor)) else {
+            return;
+        };
+        let current = doc.editor.as_ref().map(|e| e.read(cx).value());
+        let dirty = match (current, doc.text()) {
+            (Some(current), Some(saved)) => current.as_ref() != saved,
+            _ => false,
+        };
+        if dirty != doc.dirty {
+            doc.dirty = dirty;
+            cx.notify();
+        }
+    }
+
+    /// Writes the tab's text to its file. Refuses when the file changed on
+    /// disk since it was read, unless `overwrite` says the user chose to.
+    fn save(&mut self, index: usize, overwrite: bool, cx: &mut Context<Self>) {
+        let Some(doc) = self.docs.get_mut(index) else { return };
+        let Some(editor) = doc.editor.clone() else { return };
+        if !doc.editable || !(doc.dirty || overwrite) {
+            return;
+        }
+        let on_disk = modified(&doc.path);
+        // A deleted file is simply written again.
+        if !overwrite && on_disk.is_some() && on_disk != doc.modified {
+            doc.notice = Some(Notice::ChangedOnDisk);
+            cx.notify();
+            return;
+        }
+        let text = editor.read(cx).value().to_string();
+        match save::write(&doc.path, &text) {
+            Ok(written) => {
+                // The time of our own write, so a change landing right after it still counts as a conflict.
+                doc.modified = written.or_else(|| modified(&doc.path));
+                if doc.is_markdown() {
+                    doc.segments = markdown::segments(&text);
+                    doc.content = Content::Markdown(text);
+                } else if let Content::Text { language, .. } = doc.content {
+                    doc.content = Content::Text { text, language };
+                }
+                doc.dirty = false;
+                doc.notice = None;
+            }
+            Err(e) => doc.notice = Some(Notice::SaveFailed(e.to_string())),
+        }
+        cx.notify();
+    }
+
+    /// Replaces the tab with what's on disk, dropping unsaved edits.
+    fn reload(doc: &mut Doc, window: &mut Window, cx: &mut Context<Self>) {
+        doc.modified = modified(&doc.path);
+        let loaded = load_or_explain(&doc.path);
+        if let Content::Markdown(text) = &loaded.content {
+            doc.segments = markdown::segments(text);
+        }
+        doc.editable = loaded.editable() && save::writable(&doc.path);
+        if let (Some(editor), Some(text)) = (
+            &doc.editor,
+            match &loaded.content {
+                Content::Text { text, .. } | Content::Markdown(text) => Some(text.clone()),
+                _ => None,
+            },
+        ) {
+            let editable = doc.editable;
+            editor.update(cx, |e, cx| {
+                e.set_value(text, window, cx);
+                e.set_readonly(!editable, cx);
+            });
+        }
+        doc.content = loaded.content;
+        doc.dirty = false;
+        doc.notice = None;
+    }
+
+    fn resolve(&mut self, index: usize, keep_mine: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if keep_mine {
+            self.save(index, true, cx);
+        } else if let Some(doc) = self.docs.get_mut(index) {
+            Self::reload(doc, window, cx);
+            self.apply_find(cx);
+        }
+        cx.notify();
     }
 
     fn reload_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -187,23 +322,16 @@ impl Viewer {
             if now.is_none() || now == doc.modified {
                 continue;
             }
-            doc.modified = now;
-            if let Ok(content) = load::load(&doc.path) {
-                if let Content::Markdown(text) = &content {
-                    doc.segments = markdown::segments(text);
+            if doc.dirty {
+                // Keep `modified` as read, so ⌘S still sees the conflict.
+                if doc.notice != Some(Notice::ChangedOnDisk) {
+                    doc.notice = Some(Notice::ChangedOnDisk);
+                    changed = true;
                 }
-                if let (Some(editor), Some(text)) = (
-                    &doc.editor,
-                    match &content {
-                        Content::Text { text, .. } | Content::Markdown(text) => Some(text.clone()),
-                        _ => None,
-                    },
-                ) {
-                    editor.update(cx, |e, cx| e.set_value(text, window, cx));
-                }
-                doc.content = content;
-                changed = true;
+                continue;
             }
+            Self::reload(doc, window, cx);
+            changed = true;
         }
         if changed {
             self.apply_find(cx);
@@ -222,8 +350,51 @@ impl Viewer {
         }
     }
 
+    /// Closes a tab, asking first when it has unsaved edits.
+    fn request_close(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(doc) = self.docs.get(index) else { return };
+        if !doc.dirty {
+            self.close(index, cx);
+            return;
+        }
+        let name = doc.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let path = doc.path.clone();
+        let buttons = [PromptButton::Ok("Save".into()), PromptButton::new("Don't Save"), PromptButton::Cancel("Cancel".into())];
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            &format!("Save changes to {name}?"),
+            Some("Your changes are lost if you don't save them."),
+            &buttons,
+            cx,
+        );
+        cx.spawn(async move |this, cx| {
+            let Ok(choice) = answer.await else { return };
+            let _ = this.update(cx, |viewer, cx| {
+                // The tab may have moved while the sheet was up.
+                let Some(i) = viewer.docs.iter().position(|d| d.path == path) else { return };
+                match choice {
+                    0 => {
+                        viewer.save(i, false, cx);
+                        if !viewer.docs[i].dirty {
+                            viewer.close(i, cx);
+                        }
+                    }
+                    1 => viewer.close(i, cx),
+                    _ => {}
+                }
+            });
+        })
+        .detach();
+    }
+
     fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(doc) = self.docs.get_mut(self.active) {
+            // The preview shows what Source holds, saved or not (undone edits included).
+            if mode == Mode::Preview
+                && let Some(editor) = &doc.editor
+            {
+                doc.segments = markdown::segments(&editor.read(cx).value());
+            }
             doc.mode = mode;
             Self::ensure_editor(doc, window, cx);
         }
@@ -303,6 +474,7 @@ impl Viewer {
                         viewer.apply_find(cx);
                     }))
                     .child(name)
+                    .when(doc.dirty, |d| d.child(div().size(px(6.)).rounded_full().bg(rgba(chrome.accent))))
                     .child(
                         div()
                             .id(("vtab-close", i))
@@ -313,9 +485,9 @@ impl Viewer {
                             .justify_center()
                             .opacity(0.6)
                             .hover(|s| s.bg(rgba(chrome.hover)).opacity(1.))
-                            .on_click(cx.listener(move |viewer, _, _, cx| {
+                            .on_click(cx.listener(move |viewer, _, window, cx| {
                                 cx.stop_propagation();
-                                viewer.close(i, cx);
+                                viewer.request_close(i, window, cx);
                             }))
                             .child(svg().path("icons/x.svg").size(px(11.)).text_color(rgba(chrome.dim))),
                     ),
@@ -364,6 +536,19 @@ impl Viewer {
                     .text_color(rgba(chrome.faint))
                     .child(shown),
             )
+            .when(!doc.editable && doc.text().is_some(), |d| {
+                d.child(
+                    div()
+                        .px(px(6.))
+                        .py(px(1.))
+                        .rounded(px(4.))
+                        .border_1()
+                        .border_color(rgba(chrome.border))
+                        .text_size(px(11.))
+                        .text_color(rgba(chrome.faint))
+                        .child("Read-only"),
+                )
+            })
             .when(doc.is_markdown(), |d| {
                 d.child(
                     div().flex().gap(px(2.)).p(px(2.)).rounded(px(7.)).bg(rgba(chrome.chrome_2)).child(seg("Preview", Mode::Preview, cx)).child(seg(
@@ -375,6 +560,64 @@ impl Viewer {
             })
             .child(div().w(px(170.)).child(Input::new(&self.find).cleanable(true)))
             .child(div().min_w(px(32.)).text_size(px(11.)).text_color(rgba(chrome.faint)).child(self.find_count.clone()))
+    }
+
+    fn render_notice(&self, index: usize, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let chrome = self.chrome;
+        let notice = self.docs[index].notice.clone()?;
+        let button = |id: &'static str, label: &'static str, primary: bool| {
+            div()
+                .id(id)
+                .px(px(8.))
+                .py(px(2.))
+                .rounded(px(5.))
+                .text_size(px(12.))
+                .when(primary, |d| d.bg(rgba(chrome.accent)).text_color(rgb(0xffffff)))
+                .when(!primary, |d| d.border_1().border_color(rgba(chrome.border)).text_color(rgba(chrome.text)))
+                .hover(|s| s.opacity(0.85))
+                .child(label)
+        };
+        let (message, actions): (String, Vec<AnyElement>) = match notice {
+            Notice::ChangedOnDisk => (
+                "This file changed on disk.".into(),
+                vec![
+                    button("notice-reload", "Reload", false)
+                        .on_click(cx.listener(move |viewer, _, window, cx| viewer.resolve(index, false, window, cx)))
+                        .into_any_element(),
+                    button("notice-keep", "Keep Mine", true)
+                        .on_click(cx.listener(move |viewer, _, window, cx| viewer.resolve(index, true, window, cx)))
+                        .into_any_element(),
+                ],
+            ),
+            Notice::SaveFailed(why) => (
+                format!("Couldn't save: {why}"),
+                vec![
+                    button("notice-dismiss", "Dismiss", false)
+                        .on_click(cx.listener(move |viewer, _, _, cx| {
+                            if let Some(doc) = viewer.docs.get_mut(index) {
+                                doc.notice = None;
+                            }
+                            cx.notify();
+                        }))
+                        .into_any_element(),
+                ],
+            ),
+        };
+        Some(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(8.))
+                .px(px(10.))
+                .py(px(6.))
+                .bg(rgba(chrome.chrome_2))
+                .border_b_1()
+                .border_color(rgba(chrome.border))
+                .child(div().flex_1().min_w_0().text_size(px(12.)).text_color(rgba(chrome.text)).child(message))
+                .children(actions)
+                .into_any_element(),
+        )
     }
 
     fn render_preview(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -491,6 +734,12 @@ fn open_link(viewer: &Entity<Viewer>, base: &Path, link: &SharedString, window: 
     }
 }
 
+/// A file as read, or a note saying why it couldn't be. The note is never editable.
+fn load_or_explain(path: &Path) -> Loaded {
+    load::load_file(path)
+        .unwrap_or_else(|e| Loaded { content: Content::Text { text: format!("Couldn't read this file: {e}"), language: None }, exact: false })
+}
+
 fn modified(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
@@ -532,7 +781,17 @@ impl Render for Viewer {
         };
         let tabs = self.render_tabs(cx).into_any_element();
         let bar = self.render_bar(&self.docs[index], cx).into_any_element();
-        div().size_full().flex().flex_col().child(tabs).child(bar).child(div().flex_1().min_h_0().child(body)).into_any_element()
+        let notice = self.render_notice(index, cx);
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .on_action(cx.listener(|viewer, _: &Save, _, cx| viewer.save(viewer.active, false, cx)))
+            .child(tabs)
+            .child(bar)
+            .children(notice)
+            .child(div().flex_1().min_h_0().child(body))
+            .into_any_element()
     }
 }
 
