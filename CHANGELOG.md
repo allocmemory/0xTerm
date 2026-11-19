@@ -10,7 +10,10 @@ All notable changes to 0xTerm are listed here. Versions follow
 - The viewer edits files. Click into a tab and type; ⌘S (or Shell › Save)
   saves. A dot marks a tab with unsaved changes, and closing it asks first.
   Saving writes a new copy and swaps it in, so a crash never leaves half a
-  file, and the file keeps its permissions, symlinks and hard links.
+  file. The file keeps its permissions, ACLs, extended attributes (Finder
+  tags), symlinks and hard links. Files you can't write, and files owned by
+  someone else's account, are handled without replacing them: read-only files
+  open read-only, and others are written in place.
 - If a file changes on disk while its tab has unsaved edits, the tab keeps
   your text and asks: **Reload** or **Keep Mine**. Tabs without edits still
   follow the file as before.

@@ -191,7 +191,7 @@ impl Viewer {
             editor: None,
             segments: Vec::new(),
             preview_scroll: ScrollHandle::new(),
-            editable: loaded.editable(),
+            editable: loaded.editable() && save::writable(path),
             dirty: false,
             notice: None,
             _editor_events: None,
@@ -262,8 +262,9 @@ impl Viewer {
         }
         let text = editor.read(cx).value().to_string();
         match save::write(&doc.path, &text) {
-            Ok(()) => {
-                doc.modified = modified(&doc.path);
+            Ok(written) => {
+                // The time of our own write, so a change landing right after it still counts as a conflict.
+                doc.modified = written.or_else(|| modified(&doc.path));
                 if doc.is_markdown() {
                     doc.segments = markdown::segments(&text);
                     doc.content = Content::Markdown(text);
@@ -285,7 +286,7 @@ impl Viewer {
         if let Content::Markdown(text) = &loaded.content {
             doc.segments = markdown::segments(text);
         }
-        doc.editable = loaded.editable();
+        doc.editable = loaded.editable() && save::writable(&doc.path);
         if let (Some(editor), Some(text)) = (
             &doc.editor,
             match &loaded.content {
@@ -388,9 +389,8 @@ impl Viewer {
 
     fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(doc) = self.docs.get_mut(self.active) {
-            // The preview shows unsaved Source edits too.
+            // The preview shows what Source holds, saved or not (undone edits included).
             if mode == Mode::Preview
-                && doc.dirty
                 && let Some(editor) = &doc.editor
             {
                 doc.segments = markdown::segments(&editor.read(cx).value());
