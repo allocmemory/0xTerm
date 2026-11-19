@@ -3,6 +3,35 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+
+- The viewer edits files. Click into a tab and type; ⌘S (or Shell › Save)
+  saves. A dot marks a tab with unsaved changes, and closing it asks first.
+  Saving writes a new copy and swaps it in, so a crash never leaves half a
+  file, and the file keeps its permissions, symlinks and hard links.
+- If a file changes on disk while its tab has unsaved edits, the tab keeps
+  your text and asks: **Reload** or **Keep Mine**. Tabs without edits still
+  follow the file as before.
+- Markdown Preview shows unsaved Source edits.
+- **New File…** (⌥⌘N, or right-click the file tree) asks for a name and
+  opens the new file in the viewer. Picking a name that exists opens that file
+  as it is.
+- Quitting or closing a window with unsaved edits asks to save them.
+
+### Changed
+
+- Files that aren't valid UTF-8 open read-only, marked in the viewer, so
+  saving can't replace characters it couldn't read.
+- In the viewer, ⌘[ and ⌘] switch panes and ⇧⌘F searches the folder, as
+  everywhere else. Find and replace in a file is ⌥⌘F; Tab and ⇧Tab indent.
+
+### Known issues
+
+- **Quit** from the Dock icon, and logging out, still quit without asking
+  about unsaved edits. ⌘Q and 0xTerm › Quit ask.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added
