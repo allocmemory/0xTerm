@@ -19,6 +19,10 @@ All notable changes to 0xTerm are listed here. Versions follow
   follow the file as before.
 - Markdown Preview shows unsaved Source edits.
 - Quitting or closing a window with unsaved edits asks to save them.
+- Rename a tab: double-click it, right-click › **Rename Tab…**, or
+  Shell › **Rename Tab…**. Enter keeps the name, Escape cancels, and an empty
+  name goes back to following the running job or folder. The window title
+  follows the name.
 
 ### Changed
 

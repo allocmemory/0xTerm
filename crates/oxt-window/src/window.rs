@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::WindowExt;
-use gpui_kit::component::input::Replace;
+use gpui_kit::component::input::{InputEvent, InputState, Replace};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::*;
 use oxt_config::{Chrome, Config};
@@ -38,7 +38,8 @@ actions!(
         ToggleSidebar,
         ToggleViewer,
         SearchFolder,
-        FindInFile
+        FindInFile,
+        RenameTab
     ]
 );
 
@@ -74,15 +75,47 @@ pub fn bind_keys(cx: &mut App) {
 }
 
 pub(crate) struct Tab {
+    /// Names this tab for its whole life (its first pane's id), so something
+    /// held across events, like an open menu, finds it after tabs shift.
+    pub id: PaneId,
     pub root: Node<PaneId>,
     pub panes: HashMap<PaneId, Pane>,
     pub active: PaneId,
+    /// A name the user gave the tab. `None` follows the running job or folder.
+    pub name: Option<SharedString>,
 }
 
 impl Tab {
     pub fn label(&self) -> SharedString {
-        self.panes.get(&self.active).map(|p| p.label.clone()).unwrap_or_default()
+        self.name.clone().unwrap_or_else(|| self.panes.get(&self.active).map(|p| p.label.clone()).unwrap_or_default())
     }
+}
+
+/// The longest tab name kept, in characters.
+const MAX_TAB_NAME: usize = 64;
+
+/// A typed tab name as it's kept: trimmed, without control characters, at
+/// most `MAX_TAB_NAME` characters. Empty gives the tab back its automatic name.
+pub(crate) fn clean_tab_name(typed: &str) -> Option<SharedString> {
+    let name: String = typed.chars().filter(|c| !c.is_control()).collect::<String>().trim().chars().take(MAX_TAB_NAME).collect();
+    let name = name.trim_end();
+    (!name.is_empty()).then(|| SharedString::from(name.to_owned()))
+}
+
+/// The tab's name after a rename. A field committed as it opened leaves the
+/// tab as it was, so clicking away from an accidental rename doesn't freeze
+/// an automatic name like `vim` in place.
+pub(crate) fn renamed(typed: &str, opened_with: &str, before: Option<SharedString>) -> Option<SharedString> {
+    if typed == opened_with { before } else { clean_tab_name(typed) }
+}
+
+/// A tab being renamed in place.
+pub(crate) struct Rename {
+    /// The tab's `id`, not its index: other tabs may close meanwhile.
+    pub tab: PaneId,
+    pub input: Entity<InputState>,
+    opened_with: SharedString,
+    _events: Subscription,
 }
 
 /// What the mouse is dragging right now.
@@ -126,6 +159,7 @@ pub struct Workspace {
     split_bounds: Rc<RefCell<HashMap<Vec<bool>, Bounds<Pixels>>>>,
     body_bounds: Rc<RefCell<Bounds<Pixels>>>,
     error: Option<String>,
+    pub(crate) renaming: Option<Rename>,
     /// The user already chose what happens to unsaved viewer edits, so the
     /// window may close without asking again.
     close_confirmed: bool,
@@ -159,6 +193,7 @@ impl Workspace {
             split_bounds: Default::default(),
             body_bounds: Default::default(),
             error: None,
+            renaming: None,
             close_confirmed: false,
         };
         workspace.new_tab_in(cwd, window, cx);
@@ -289,7 +324,7 @@ impl Workspace {
 
     fn new_tab_in(&mut self, cwd: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         if let Some((id, pane)) = self.spawn_pane(cwd, window, cx) {
-            let tab = Tab { root: Node::Leaf(id), panes: HashMap::from([(id, pane)]), active: id };
+            let tab = Tab { id, root: Node::Leaf(id), panes: HashMap::from([(id, pane)]), active: id, name: None };
             self.tabs.push(tab);
             self.active = self.tabs.len() - 1;
             self.focus_active(window, cx);
@@ -343,10 +378,59 @@ impl Workspace {
             self.close_window(window, cx);
             return;
         }
+        let closing = self.tabs[index].id;
+        if self.renaming.as_ref().is_some_and(|r| r.tab == closing) {
+            self.renaming = None;
+        }
         self.tabs.remove(index);
         if self.active > index || self.active >= self.tabs.len() {
             self.active = self.active.saturating_sub(1);
         }
+        // A rename in another tab keeps the keyboard; typing mustn't land in a shell.
+        if self.renaming.is_none() {
+            self.focus_active(window, cx);
+        }
+        cx.notify();
+    }
+
+    /// Where the tab with this `id` is now.
+    pub(crate) fn tab_index(&self, id: PaneId) -> Option<usize> {
+        self.tabs.iter().position(|t| t.id == id)
+    }
+
+    /// Puts a text field in the tab's place, holding its name selected.
+    pub(crate) fn start_rename(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(tab) = self.tabs.get(index) else { return };
+        if self.renaming.as_ref().is_some_and(|r| r.tab == tab.id) {
+            return;
+        }
+        let (id, label) = (tab.id, tab.label());
+        let input = cx.new(|cx| InputState::new(window, cx));
+        input.update(cx, |input, cx| {
+            input.set_value(label.clone(), window, cx);
+            input.select_all(window, cx);
+            input.focus(window, cx);
+        });
+        let events = cx.subscribe_in(&input, window, |ws, _, event: &InputEvent, window, cx| {
+            if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                ws.finish_rename(true, window, cx);
+            }
+        });
+        self.renaming = Some(Rename { tab: id, input, opened_with: label, _events: events });
+        cx.notify();
+    }
+
+    /// Ends a rename: keeps the typed name, or with `keep` false leaves the
+    /// tab as it was. An empty name goes back to the automatic one.
+    pub(crate) fn finish_rename(&mut self, keep: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(rename) = self.renaming.take() else { return };
+        if keep && let Some(i) = self.tab_index(rename.tab) {
+            let typed = rename.input.read(cx).value();
+            let tab = &mut self.tabs[i];
+            tab.name = renamed(&typed, &rename.opened_with, tab.name.take());
+        }
+        let title = self.active_tab().map(|t| t.label()).unwrap_or_default();
+        window.set_window_title(&title);
         self.focus_active(window, cx);
         cx.notify();
     }
@@ -734,6 +818,7 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &NextTab, window, cx| this.cycle_tab(true, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousTab, window, cx| this.cycle_tab(false, window, cx)))
             .on_action(cx.listener(|this, _: &ToggleSidebar, window, cx| this.toggle_sidebar(window, cx)))
+            .on_action(cx.listener(|this, _: &RenameTab, window, cx| this.start_rename(this.active, window, cx)))
             .on_action(cx.listener(|this, _: &ToggleViewer, window, cx| this.toggle_viewer(window, cx)))
             .on_action(cx.listener(|this, _: &FindInFile, window, cx| {
                 if !this.viewer.read(cx).is_empty() {
@@ -751,5 +836,39 @@ impl Render for Workspace {
             .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, _| this.drag = None))
             .child(render_title_row(self, cx))
             .child(body)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `super::*`: GPUI's glob brings its own `test` attribute.
+    use super::{MAX_TAB_NAME, clean_tab_name, renamed};
+    use gpui_kit::SharedString;
+
+    #[test]
+    fn an_untouched_rename_leaves_the_tab_as_it_was() {
+        // Automatic label committed unchanged: still automatic.
+        assert_eq!(renamed("vim", "vim", None), None);
+        // A custom name committed unchanged: kept.
+        assert_eq!(renamed("api", "api", Some(SharedString::from("api"))).as_deref(), Some("api"));
+        // Typed over the automatic label: a custom name.
+        assert_eq!(renamed("logs", "vim", None).as_deref(), Some("logs"));
+        // Cleared: back to automatic.
+        assert_eq!(renamed("", "api", Some(SharedString::from("api"))), None);
+    }
+
+    #[test]
+    fn tab_names_are_trimmed_and_empty_means_automatic() {
+        assert_eq!(clean_tab_name("  api  ").as_deref(), Some("api"));
+        assert_eq!(clean_tab_name("   "), None);
+        assert_eq!(clean_tab_name(""), None);
+    }
+
+    #[test]
+    fn tab_names_drop_control_characters_and_stay_short() {
+        assert_eq!(clean_tab_name("db\x1b[31m\n").as_deref(), Some("db[31m"));
+        let long = "x".repeat(200);
+        assert_eq!(clean_tab_name(&long).map(|n| n.chars().count()), Some(MAX_TAB_NAME));
+        assert_eq!(clean_tab_name("café ☕").as_deref(), Some("café ☕"));
     }
 }
