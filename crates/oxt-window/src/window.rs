@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::WindowExt;
+use gpui_kit::component::input::Replace;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::*;
 use oxt_config::{Chrome, Config};
@@ -64,6 +65,13 @@ pub fn bind_keys(cx: &mut App) {
         // Handled by the viewer when focus is in it; elsewhere it does nothing.
         KeyBinding::new("cmd-s", Save, None),
         KeyBinding::new("alt-cmd-n", NewFile, None),
+        // Text fields bind these to indent, outdent and replace, which would
+        // win in the viewer's editor. Window shortcuts mean the same thing
+        // everywhere: Tab and ⇧Tab indent, ⌥⌘F replaces (as in macOS apps).
+        KeyBinding::new("cmd-]", NextPane, Some("Input")),
+        KeyBinding::new("cmd-[", PreviousPane, Some("Input")),
+        KeyBinding::new("cmd-shift-f", SearchFolder, Some("Input")),
+        KeyBinding::new("alt-cmd-f", Replace, Some("Input")),
     ]);
 }
 
