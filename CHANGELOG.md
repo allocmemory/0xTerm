@@ -22,6 +22,10 @@ All notable changes to 0xTerm are listed here. Versions follow
   opens the new file in the viewer. Picking a name that exists opens that file
   as it is.
 - Quitting or closing a window with unsaved edits asks to save them.
+- Rename a tab: double-click it, right-click › **Rename Tab…**, or
+  Shell › **Rename Tab…**. Enter keeps the name, Escape cancels, and an empty
+  name goes back to following the running job or folder. The window title
+  follows the name.
 
 ### Changed
 

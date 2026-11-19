@@ -41,7 +41,8 @@ and nothing else.
   your `PATH`.
 - **Tabs and splits.** Split right or down, drag the divider. Inactive panes
   dim. Tabs are named after the running job, like `vim` or `htop`, and fall
-  back to the folder name.
+  back to the folder name. Double-click a tab to give it a name of your own;
+  clear the name to go back.
 - **A file tree that follows your shell.** `cd` and the sidebar moves with
   you. Folders come first, `.gitignore`d files stay out of the way, and the
   tree updates live.
@@ -106,7 +107,7 @@ open a window there. A text file opens in the viewer.
 | ⌘H / ⌥⌘H | hide 0xTerm / hide the other apps |
 | ⌘-click | open a `path:line` or a URL |
 
-Right-click a pane to split or close it. Right-click the file tree for
+Right-click a tab to rename or close it. Right-click a pane to split or close it. Right-click the file tree for
 **cd Here**, **New Tab Here**, **New File…**, **Insert Path** and **Copy Path**.
 Tab and ⇧Tab indent in the viewer; ⌘[ and ⌘] still switch panes there.
 

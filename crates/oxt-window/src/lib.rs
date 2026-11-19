@@ -9,6 +9,6 @@ mod tab_bar;
 mod window;
 
 pub use window::{
-    ClosePane, CloseTab, FindInFile, NewFile, NewTab, NextPane, NextTab, PreviousPane, PreviousTab, SearchFolder, SplitDown, SplitRight,
+    ClosePane, CloseTab, FindInFile, NewFile, NewTab, NextPane, NextTab, PreviousPane, PreviousTab, RenameTab, SearchFolder, SplitDown, SplitRight,
     ToggleSidebar, ToggleViewer, Workspace, bind_keys, is_dark,
 };
