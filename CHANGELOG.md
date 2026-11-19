@@ -27,6 +27,12 @@ All notable changes to 0xTerm are listed here. Versions follow
 - In the viewer, ⌘[ and ⌘] switch panes and ⇧⌘F searches the folder, as
   everywhere else. Find and replace in a file is ⌥⌘F; Tab and ⇧Tab indent.
 
+### Fixed
+
+- Settings › Icon no longer opens a wide gap between columns, which showed
+  up after picking an icon. Tiles now have one width and the grid keeps its
+  size.
+
 ### Known issues
 
 - **Quit** from the Dock icon, and logging out, still quit without asking
