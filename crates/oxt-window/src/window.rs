@@ -120,6 +120,9 @@ pub struct Workspace {
     split_bounds: Rc<RefCell<HashMap<Vec<bool>, Bounds<Pixels>>>>,
     body_bounds: Rc<RefCell<Bounds<Pixels>>>,
     error: Option<String>,
+    /// The user already chose what happens to unsaved viewer edits, so the
+    /// window may close without asking again.
+    close_confirmed: bool,
 }
 
 impl Workspace {
@@ -150,8 +153,13 @@ impl Workspace {
             split_bounds: Default::default(),
             body_bounds: Default::default(),
             error: None,
+            close_confirmed: false,
         };
         workspace.new_tab_in(cwd, window, cx);
+
+        // The red button asks first when the viewer has unsaved edits.
+        let this = cx.entity().downgrade();
+        window.on_window_should_close(cx, move |window, cx| this.update(cx, |ws, cx| ws.should_close(window, cx)).unwrap_or(true));
 
         cx.observe_window_appearance(window, |this, window, cx| this.appearance_changed(window, cx)).detach();
 
@@ -325,16 +333,88 @@ impl Workspace {
         if index >= self.tabs.len() {
             return;
         }
-        self.tabs.remove(index);
-        if self.tabs.is_empty() {
-            window.remove_window();
+        if self.tabs.len() == 1 {
+            self.close_window(window, cx);
             return;
         }
+        self.tabs.remove(index);
         if self.active > index || self.active >= self.tabs.len() {
             self.active = self.active.saturating_sub(1);
         }
         self.focus_active(window, cx);
         cx.notify();
+    }
+
+    /// Whether the viewer has edits that aren't saved.
+    pub fn has_unsaved(&self, cx: &App) -> bool {
+        !self.viewer.read(cx).unsaved().is_empty()
+    }
+
+    /// Resolves to true once nothing unsaved stands in the way of closing:
+    /// right away, or after the user saves or discards in a sheet. False
+    /// when they cancel, or when a save didn't go through.
+    pub fn confirm_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
+        let unsaved = self.viewer.read(cx).unsaved();
+        if unsaved.is_empty() {
+            return Task::ready(true);
+        }
+        // Show the tabs being asked about.
+        self.viewer_open = true;
+        cx.notify();
+        let names: Vec<String> = unsaved.iter().filter_map(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).collect();
+        let message = match names.as_slice() {
+            [one] => format!("Save changes to {one}?"),
+            _ => format!("Save changes to {} files?", names.len()),
+        };
+        let detail = if names.len() > 1 {
+            format!("{}\n\nYour changes are lost if you don't save them.", names.join(", "))
+        } else {
+            "Your changes are lost if you don't save them.".to_owned()
+        };
+        let save = if names.len() > 1 { "Save All" } else { "Save" };
+        let buttons = [PromptButton::Ok(save.into()), PromptButton::new("Don't Save"), PromptButton::Cancel("Cancel".into())];
+        let answer = window.prompt(PromptLevel::Warning, &message, Some(&detail), &buttons, cx);
+        cx.spawn_in(window, async move |this, cx| match answer.await {
+            Ok(0) => this.update(cx, |ws, cx| ws.viewer.update(cx, |viewer, cx| viewer.save_all(cx))).unwrap_or(false),
+            Ok(1) => true,
+            _ => false,
+        })
+    }
+
+    /// Closes the window, asking about unsaved edits first.
+    fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let confirmed = self.confirm_close(window, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let close = confirmed.await;
+            let _ = this.update_in(cx, |ws, window, cx| {
+                if close {
+                    ws.close_confirmed = true;
+                    window.remove_window();
+                } else {
+                    ws.revive_dead_tab(window, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The window stayed open after its last shell exited: give it a live one.
+    fn revive_dead_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let dead = self.tabs.len() == 1 && self.tabs[0].panes.values().all(|p| p.view.read(cx).has_exited());
+        if dead {
+            let cwd = self.active_cwd(cx);
+            self.tabs.clear();
+            self.active = 0;
+            self.new_tab_in(cwd, window, cx);
+        }
+    }
+
+    fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.close_confirmed || !self.has_unsaved(cx) {
+            return true;
+        }
+        self.close_window(window, cx);
+        false
     }
 
     pub(crate) fn activate_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {

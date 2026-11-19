@@ -128,6 +128,27 @@ impl Viewer {
         self.docs.is_empty()
     }
 
+    /// Files with edits that aren't on disk yet.
+    pub fn unsaved(&self) -> Vec<PathBuf> {
+        self.docs.iter().filter(|d| d.dirty).map(|d| d.path.clone()).collect()
+    }
+
+    /// Saves every tab with unsaved edits. False when any is still unsaved,
+    /// because it changed on disk or couldn't be written; those tabs show why.
+    pub fn save_all(&mut self, cx: &mut Context<Self>) -> bool {
+        for i in 0..self.docs.len() {
+            if self.docs[i].dirty {
+                self.save(i, false, cx);
+            }
+        }
+        if let Some(i) = self.docs.iter().position(|d| d.dirty) {
+            self.active = i;
+            cx.notify();
+            return false;
+        }
+        true
+    }
+
     pub fn focus_find(&self, window: &mut Window, cx: &mut App) {
         self.find.update(cx, |find, cx| find.focus(window, cx));
     }

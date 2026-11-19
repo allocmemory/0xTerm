@@ -6,6 +6,7 @@ mod macos;
 mod menus;
 mod settings_window;
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 
 use gpui_kit::*;
@@ -14,6 +15,41 @@ use oxt_toolbelt::OpenRequest;
 use oxt_window::Workspace;
 
 actions!(oxterm, [Quit, NewWindow, OpenSettings]);
+
+thread_local! {
+    /// Every window this app opened, so Quit can ask each about unsaved edits.
+    static WORKSPACES: RefCell<Vec<(AnyWindowHandle, WeakEntity<Workspace>)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Quits once every window with unsaved viewer edits has been asked, one
+/// window at a time. Cancel in any of them keeps the app running.
+///
+/// Dock › Quit and logging out don't come through here: GPUI ends the app
+/// for those without asking.
+fn quit(cx: &mut App) {
+    let pending: Vec<(AnyWindowHandle, WeakEntity<Workspace>)> = WORKSPACES.with(|w| {
+        w.borrow_mut().retain(|(_, ws)| ws.upgrade().is_some());
+        w.borrow().iter().filter(|(_, ws)| ws.upgrade().is_some_and(|ws| ws.read(cx).has_unsaved(cx))).cloned().collect()
+    });
+    if pending.is_empty() {
+        cx.quit();
+        return;
+    }
+    cx.spawn(async move |cx| {
+        for (handle, ws) in pending {
+            let asked = handle.update(cx, |_, window, cx| {
+                window.activate_window();
+                ws.update(cx, |ws, cx| ws.confirm_close(window, cx))
+            });
+            let Ok(Ok(asked)) = asked else { continue };
+            if !asked.await {
+                return;
+            }
+        }
+        cx.update(|cx| cx.quit());
+    })
+    .detach();
+}
 
 /// Written by Settings' "Edit config.toml…" when there's no config file yet.
 const STARTER_CONFIG: &str = "\
@@ -95,7 +131,11 @@ fn open_workspace(cwd: Option<PathBuf>, cx: &mut App) -> Option<(AnyWindowHandle
         }
         workspace
     });
-    opened.inspect_err(|err| eprintln!("0xTerm: couldn't open a window: {err}")).ok()
+    let opened = opened.inspect_err(|err| eprintln!("0xTerm: couldn't open a window: {err}")).ok();
+    if let Some((handle, workspace)) = &opened {
+        WORKSPACES.with(|w| w.borrow_mut().push((*handle, workspace.downgrade())));
+    }
+    opened
 }
 
 fn open_in_viewer(window: AnyWindowHandle, workspace: &Entity<Workspace>, path: PathBuf, cx: &mut App) {
@@ -156,7 +196,7 @@ fn main() {
         oxt_terminal_view::bind_keys(cx);
         oxt_window::bind_keys(cx);
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None), KeyBinding::new("cmd-n", NewWindow, None)]);
-        cx.on_action(|_: &Quit, cx| cx.quit());
+        cx.on_action(|_: &Quit, cx| quit(cx));
         cx.on_action(|_: &NewWindow, cx| _ = open_workspace(None, cx));
         cx.on_action(|_: &OpenSettings, _| settings_window::show());
         let (open_config_tx, open_config_rx) = async_channel::unbounded::<()>();
