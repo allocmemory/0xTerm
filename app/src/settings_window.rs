@@ -11,8 +11,8 @@ use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{AllocAnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSBackingStoreType, NSBezelStyle, NSButton, NSButtonType, NSCellImagePosition, NSColor, NSControlStateValueOff, NSControlStateValueOn,
-    NSFontManager, NSGridView, NSImage, NSLayoutAttribute, NSOpenPanel, NSPopUpButton, NSStackView, NSTextField, NSToolbar, NSToolbarDelegate,
-    NSToolbarItem, NSUserInterfaceLayoutOrientation, NSView, NSWindow, NSWindowStyleMask, NSWindowToolbarStyle,
+    NSFontManager, NSGridView, NSImage, NSLayoutAttribute, NSLineBreakMode, NSOpenPanel, NSPopUpButton, NSStackView, NSTextField, NSToolbar,
+    NSToolbarDelegate, NSToolbarItem, NSUserInterfaceLayoutOrientation, NSView, NSWindow, NSWindowStyleMask, NSWindowToolbarStyle,
 };
 use objc2_foundation::{NSArray, NSEdgeInsets, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSUserDefaults};
 use oxt_config::edit::{Value, write_key};
@@ -438,7 +438,9 @@ impl Controller {
         }
         for file in imported_files() {
             let path = Config::icons_dir().map(|dir| dir.join(&file));
-            choices.push((file.clone(), file, path));
+            // The extension is the same on every tile; the name is what tells them apart.
+            let title = Path::new(&file).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| file.clone());
+            choices.push((file.clone(), title, path));
         }
 
         let buttons: Vec<(String, Retained<NSButton>)> = choices
@@ -450,9 +452,13 @@ impl Controller {
                 b.setBezelStyle(NSBezelStyle::SmallSquare);
                 b.setImagePosition(NSCellImagePosition::ImageAbove);
                 b.setTag(i as isize);
-                // Every tile the same width, whatever its title, so columns line up.
+                // Every tile the same width, whatever its title, so columns line up
+                // (Auto Layout from the start; the grid would switch it on anyway).
                 b.setTranslatesAutoresizingMaskIntoConstraints(false);
                 b.widthAnchor().constraintEqualToConstant(TILE).setActive(true);
+                // A name too long for the tile keeps both ends, and shows in full on hover.
+                b.setLineBreakMode(NSLineBreakMode::ByTruncatingMiddle);
+                b.setToolTip(Some(&NSString::from_str(if value.is_empty() { &title } else { &value })));
                 if let Some(image) = path.as_deref().and_then(load_image) {
                     image.setSize(NSSize::new(TILE - 16.0, TILE - 16.0));
                     b.setImage(Some(&image));
