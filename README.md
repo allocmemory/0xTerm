@@ -102,7 +102,7 @@ open a window there. A text file opens in the viewer.
 | ⌥⌘F | find and replace in the viewer |
 | ⌘K | clear the terminal |
 | ⌘C / ⌘V / ⌘A | copy / paste / select all |
-| ⌘, | open the config file |
+| ⌘, | open Settings |
 | ⌘M / ⌃⌘F | minimize / full screen |
 | ⌘H / ⌥⌘H | hide 0xTerm / hide the other apps |
 | ⌘-click | open a `path:line` or a URL |
