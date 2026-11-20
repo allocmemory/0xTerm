@@ -3,6 +3,14 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+
+- Quitting while **Open this link?** was showing could open the link: macOS
+  answers a sheet it closes on its own with its first button, which was Open.
+  Cancel is now the first button, so only clicking Open opens the link.
+
 ## [0.4.0] - 2026-11-19
 
 ### Added
