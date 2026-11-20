@@ -52,6 +52,14 @@ pub fn confirm_detail(url: &str, source: &Source) -> Option<String> {
     }
 }
 
+/// Whether the "Open this link?" sheet's answer means open. Its buttons are
+/// Cancel then Open, in that order, because a sheet macOS ends on its own (the
+/// app quitting with it up) answers 0, the first button's index, and that has
+/// to be the button that does nothing.
+pub fn confirmed(answer: Option<usize>) -> bool {
+    answer == Some(1)
+}
+
 fn same_url(shown: &str, url: &str) -> bool {
     shown == url || url::Url::parse(shown).is_ok_and(|parsed| parsed.as_str() == url)
 }
@@ -120,5 +128,14 @@ mod tests {
         for shown in ["https://example.com", "HTTPS://Example.COM/", " https://example.com:443/ "] {
             assert_eq!(confirm_detail("https://example.com/", &Source::Hyperlink(shown.into())), Some("https://example.com/".into()), "{shown:?}");
         }
+    }
+
+    #[test]
+    fn only_the_open_button_opens_a_link() {
+        assert!(confirmed(Some(1)));
+        // Cancel, and a sheet macOS ended on its own: both answer 0.
+        assert!(!confirmed(Some(0)));
+        // The sheet dropped without an answer.
+        assert!(!confirmed(None));
     }
 }

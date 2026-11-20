@@ -597,10 +597,11 @@ impl Workspace {
             Some(Route::External(url)) => match links::confirm_detail(&url, &source) {
                 None => cx.open_url(&url),
                 Some(detail) => {
-                    let buttons = [PromptButton::Ok("Open".into()), PromptButton::Cancel("Cancel".into())];
+                    // Cancel first: see `links::confirmed`.
+                    let buttons = [PromptButton::Cancel("Cancel".into()), PromptButton::Ok("Open".into())];
                     let answer = window.prompt(PromptLevel::Warning, "Open this link?", Some(&detail), &buttons, cx);
                     cx.spawn(async move |_, cx| {
-                        if answer.await == Ok(0) {
+                        if links::confirmed(answer.await.ok()) {
                             cx.update(|cx| cx.open_url(&url));
                         }
                     })
