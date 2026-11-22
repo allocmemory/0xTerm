@@ -229,10 +229,10 @@ emulation, [merman](https://github.com/Latias94/merman) and
 `ignore` and `grep` crates for search, and
 [Sparkle](https://sparkle-project.org) for updates.
 
-## Not in v0.2
+## Not in v0.4
 
-Profiles, a settings window, tmux and SSH integration, triggers and
-scripting. There are no AI features, and none are planned.
+Profiles, tmux and SSH integration, triggers and scripting. There are no AI
+features, and none are planned.
 
 ## Contributing
 
