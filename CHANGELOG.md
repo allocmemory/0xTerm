@@ -14,6 +14,13 @@ All notable changes to 0xTerm are listed here. Versions follow
 - Two new icons: **prompt** (0x and a block cursor on a raised card) and
   **classic** (`>_`).
 
+### Changed
+
+- **ivory** was the one light icon, so its cream look is now its Light
+  version, and Dark shows a new dark ivory. Pick Light to keep the cream one.
+- The downloadable icons are named by version: `amber-dark.icns`,
+  `amber-light.svg` and so on. `icon = "amber-light"` pins that version.
+
 ## [0.4.1] - 2026-11-20
 
 ### Fixed

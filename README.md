@@ -158,8 +158,9 @@ previewed and downloadable at [0xterm.org/icons](https://0xterm.org/icons/).
 Each one, and the built-in icon, comes in a dark and a light version.
 `icon_appearance` picks which: `"dark"` (the default) or `"light"` always
 shows that one, and `"system"` matches the macOS appearance, switching when it
-does. While 0xTerm is closed, Finder keeps the version from its last run. It also takes
-the file name of your own `.svg` or `.icns` placed in `~/.config/0xterm/icons/`:
+does; while 0xTerm is closed, Finder keeps the version from its last run. A
+name with its version (`"amber-light"`) pins that one. `icon` also takes the
+file name of your own `.svg` or `.icns` placed in `~/.config/0xterm/icons/`:
 `icon = "mine.svg"`. The Dock changes when you save, and the icon stays after
 you quit, in the Dock, Finder, Launchpad and Spotlight, because 0xTerm sets it
 as the app's Finder icon. After an update it's set again on the first launch.

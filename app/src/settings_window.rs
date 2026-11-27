@@ -161,7 +161,7 @@ define_class!(
 
         #[unsafe(method(iconVersionChanged:))]
         fn icon_version_changed(&self, sender: &NSPopUpButton) {
-            if let Some((_, value)) = ICON_VERSIONS.get(sender.indexOfSelectedItem().max(0) as usize) {
+            if let Some((_, value)) = usize::try_from(sender.indexOfSelectedItem()).ok().and_then(|i| ICON_VERSIONS.get(i)) {
                 self.write(&["app", "icon_appearance"], Some(Value::from(*value)));
             }
         }

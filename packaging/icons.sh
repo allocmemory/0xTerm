@@ -1,8 +1,9 @@
 #!/bin/zsh
-# Builds the official icon set from assets/icons into dist/icons:
+# Builds the official icon set from assets/icons into dist/icons. Every icon
+# is a family of two, so <name> here is <family>-dark or <family>-light:
 #   <name>.icns       compiled from <name>.icon by actool, as AppIcon is; bundled
 #                     in the app and offered on 0xterm.org/icons/
-#   <name>.svg        the flat, logo-shaped artwork, importable in Settings
+#   <name>.svg        the flat artwork, importable in Settings
 #   0xterm-icons.zip  all of the above plus the Icon Composer sources
 #   packaging/icons.sh
 set -euo pipefail

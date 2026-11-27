@@ -70,9 +70,12 @@ impl IconChoice {
     /// extension ("amber-dark"). `None` means no bundled file: the built-in
     /// icon in dark mode is the one compiled into the app, and an import is
     /// the user's own single file.
+    /// A name that already ends in `-light` or `-dark` ("amber-light", as the
+    /// downloads are named) pins that file whatever the appearance.
     pub fn bundled_stem(&self, appearance: Appearance) -> Option<String> {
         match self {
             IconChoice::Default => (appearance == Appearance::Light).then(|| format!("{DEFAULT_FAMILY}-light")),
+            IconChoice::Bundled(name) if name.ends_with("-light") || name.ends_with("-dark") => Some(name.clone()),
             IconChoice::Bundled(name) => Some(format!("{name}-{}", appearance.suffix())),
             IconChoice::Imported(_) => None,
         }
@@ -126,6 +129,13 @@ mod tests {
         let amber = IconChoice::parse("amber");
         assert_eq!(amber.bundled_stem(Appearance::Light).as_deref(), Some("amber-light"));
         assert_eq!(amber.bundled_stem(Appearance::Dark).as_deref(), Some("amber-dark"));
+    }
+
+    #[test]
+    fn a_variant_name_pins_that_file() {
+        let pinned = IconChoice::parse("amber-light");
+        assert_eq!(pinned.bundled_stem(Appearance::Dark).as_deref(), Some("amber-light"));
+        assert_eq!(IconChoice::parse("prompt-dark").bundled_stem(Appearance::Light).as_deref(), Some("prompt-dark"));
     }
 
     #[test]
