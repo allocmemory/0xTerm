@@ -1,0 +1,25 @@
+{
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "screen.svg",
+          "name": "screen"
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name": "bezel.svg",
+          "name": "bezel"
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
