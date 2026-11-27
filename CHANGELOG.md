@@ -3,6 +3,22 @@
 All notable changes to 0xTerm are listed here. Versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+
+- Every icon now comes in a light and a dark version, and 0xTerm shows the
+  one that matches the macOS appearance, switching as it changes. The
+  built-in icon does too. Settings shows the version for the current
+  appearance.
+- Two new icons: **prompt** (0x and a block cursor on a raised card) and
+  **classic** (`>_`).
+
+### Changed
+
+- In Light mode, icons show their new light version: a pale screen with dark
+  glyphs. The icons you knew are the dark versions (ivory's is its light one).
+
 ## [0.4.1] - 2026-11-20
 
 ### Fixed

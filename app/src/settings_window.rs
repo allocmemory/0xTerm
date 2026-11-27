@@ -428,13 +428,16 @@ impl Controller {
     }
 
     /// One tile per choice: the built-in icon, the official set, then imports.
+    /// Official tiles show the variant for the current macOS appearance.
     fn rebuild_icons(&self) {
         let mtm = self.mtm();
         let target: &AnyObject = self.as_ref();
-        let mut choices: Vec<(String, String, Option<PathBuf>)> = vec![("".into(), "Default".into(), default_icon_path())];
+        let appearance = macos::appearance();
+        let default = crate::icon::path_for(&IconChoice::Default, appearance).or_else(default_icon_path);
+        let mut choices: Vec<(String, String, Option<PathBuf>)> = vec![("".into(), "Default".into(), default)];
         for name in OFFICIAL {
             let choice = IconChoice::Bundled(name.to_string());
-            choices.push((name.to_string(), name.to_string(), crate::icon::path_for(&choice)));
+            choices.push((name.to_string(), name.to_string(), crate::icon::path_for(&choice, appearance)));
         }
         for file in imported_files() {
             let path = Config::icons_dir().map(|dir| dir.join(&file));
@@ -604,7 +607,7 @@ impl Controller {
 fn selected_value(icon: &str) -> String {
     match IconChoice::parse(icon) {
         IconChoice::Default => String::new(),
-        choice => crate::icon::path_for(&choice).map(|_| icon.trim().to_string()).unwrap_or_default(),
+        choice => crate::icon::path_for(&choice, macos::appearance()).map(|_| icon.trim().to_string()).unwrap_or_default(),
     }
 }
 

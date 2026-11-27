@@ -3,8 +3,10 @@
 
 # The app icon. Empty is the built-in icon; a name picks one of the official
 # set (chrome, graphite, midnight, ivory, amber, mint, ocean, crimson, violet,
-# phosphor, mono, glass); a file name with its extension ("mine.svg") is an
-# icon imported into the icons folder next to this file (.svg or .icns).
+# phosphor, mono, glass, prompt, classic), each shown in its light or dark
+# version to match the macOS appearance; a file name with its extension
+# ("mine.svg") is an icon imported into the icons folder next to this file
+# (.svg or .icns).
 [app]
 icon = ""
 
