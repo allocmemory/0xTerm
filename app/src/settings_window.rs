@@ -16,8 +16,8 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSEdgeInsets, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSUserDefaults};
 use oxt_config::edit::{Value, write_key};
-use oxt_config::icon::{self, OFFICIAL};
-use oxt_config::{Config, IconChoice, ThemeMode};
+use oxt_config::icon::{self, Appearance, OFFICIAL};
+use oxt_config::{Config, IconAppearance, IconChoice, ThemeMode};
 
 use crate::macos::{self, IconApplied};
 
@@ -27,6 +27,8 @@ const TILE: f64 = 72.0;
 const WIDTH: f64 = 520.0;
 const INSET: f64 = 24.0;
 const ICON_COLUMNS: usize = 4;
+/// The Version menu under the icons: its titles and the `icon_appearance` value each writes.
+const ICON_VERSIONS: [(&str, &str); 3] = [("Dark", "dark"), ("Light", "light"), ("Match macOS appearance", "system")];
 
 thread_local! {
     static CONTROLLER: OnceCell<Retained<Controller>> = const { OnceCell::new() };
@@ -65,6 +67,7 @@ struct Widgets {
     icon_grid: Retained<NSView>,
     icon_buttons: Vec<(String, Retained<NSButton>)>,
     remove: Retained<NSButton>,
+    icon_version: Retained<NSPopUpButton>,
     family: Retained<NSPopUpButton>,
     size: Retained<NSTextField>,
     line_height: Retained<NSTextField>,
@@ -154,6 +157,13 @@ define_class!(
         #[unsafe(method(metaChanged:))]
         fn meta_changed(&self, sender: &NSButton) {
             self.write(&["terminal", "option_as_meta"], Some(Value::from(sender.state() == NSControlStateValueOn)));
+        }
+
+        #[unsafe(method(iconVersionChanged:))]
+        fn icon_version_changed(&self, sender: &NSPopUpButton) {
+            if let Some((_, value)) = ICON_VERSIONS.get(sender.indexOfSelectedItem().max(0) as usize) {
+                self.write(&["app", "icon_appearance"], Some(Value::from(*value)));
+            }
         }
 
         #[unsafe(method(themeChanged:))]
@@ -256,7 +266,12 @@ impl Controller {
         let note = label("Pick an icon, or import an .svg or .icns (up to 10 MB). More at 0xterm.org/icons.", mtm);
         note.setTextColor(Some(&NSColor::secondaryLabelColor()));
         let buttons = row(&[&import, &remove], mtm);
-        let icon_pane = stack(&[&icon_grid, &buttons, &note], mtm);
+        let icon_version = NSPopUpButton::initWithFrame_pullsDown(NSPopUpButton::alloc(mtm), NSRect::ZERO, false);
+        let versions: Vec<Retained<NSString>> = ICON_VERSIONS.iter().map(|(title, _)| NSString::from_str(title)).collect();
+        icon_version.addItemsWithTitles(&NSArray::from_retained_slice(&versions));
+        set_action(&icon_version, target, sel!(iconVersionChanged:));
+        let version_row = form(&[("Version:", &icon_version)], mtm);
+        let icon_pane = stack(&[&icon_grid, &version_row, &buttons, &note], mtm);
 
         // Font
         let family = NSPopUpButton::initWithFrame_pullsDown(NSPopUpButton::alloc(mtm), NSRect::ZERO, false);
@@ -294,8 +309,19 @@ impl Controller {
         let appearance_pane = form(&[("Theme:", &theme), ("", &colors), ("", &edit)], mtm);
 
         *self.ivars().panes.borrow_mut() = vec![Retained::into_super(icon_pane), font_pane, terminal_pane, appearance_pane];
-        *self.ivars().widgets.borrow_mut() =
-            Some(Widgets { icon_grid, icon_buttons: Vec::new(), remove, family, size, line_height, shell, scrollback, option_as_meta, theme });
+        *self.ivars().widgets.borrow_mut() = Some(Widgets {
+            icon_grid,
+            icon_buttons: Vec::new(),
+            remove,
+            icon_version,
+            family,
+            size,
+            line_height,
+            shell,
+            scrollback,
+            option_as_meta,
+            theme,
+        });
     }
 
     fn make_toolbar_item(&self, id: &NSString) -> Option<Retained<NSToolbarItem>> {
@@ -353,13 +379,13 @@ impl Controller {
     /// shows its error and disables the controls until it's fixed, so the
     /// window never writes over a half-edited file.
     fn refresh(&self) {
-        let (_, error) = Config::load();
+        let (config, error) = Config::load();
         let ivars = self.ivars();
         ivars.banner.setStringValue(&NSString::from_str(
             &error.clone().map(|e| format!("config.toml has an error, so Settings can't change it: {e}")).unwrap_or_default(),
         ));
         ivars.banner.setHidden(error.is_none());
-        self.rebuild_icons();
+        self.rebuild_icons(crate::icon::appearance_for(&config));
         self.refresh_values();
         let enabled = error.is_none();
         self.with_widgets(|w| {
@@ -373,6 +399,7 @@ impl Controller {
             w.scrollback.setEnabled(enabled);
             w.option_as_meta.setEnabled(enabled);
             w.theme.setEnabled(enabled);
+            w.icon_version.setEnabled(enabled);
         });
         if enabled {
             match crate::icon::last_applied() {
@@ -406,12 +433,20 @@ impl Controller {
     fn refresh_values(&self) {
         let (config, _) = Config::load();
         *self.ivars().icon.borrow_mut() = config.app.icon.clone();
-        let selected = selected_value(&config.app.icon);
+        let selected = selected_value(&config.app.icon, crate::icon::appearance_for(&config));
         self.with_widgets(|w| {
             for (value, b) in &w.icon_buttons {
                 b.setState(if *value == selected { NSControlStateValueOn } else { NSControlStateValueOff });
             }
             w.remove.setEnabled(matches!(IconChoice::parse(&config.app.icon), IconChoice::Imported(_)));
+            let version = match config.app.icon_appearance {
+                IconAppearance::Dark => "dark",
+                IconAppearance::Light => "light",
+                IconAppearance::System => "system",
+            };
+            if let Some(index) = ICON_VERSIONS.iter().position(|(_, value)| *value == version) {
+                w.icon_version.selectItemAtIndex(index as isize);
+            }
             w.family.selectItemWithTitle(&NSString::from_str(&config.font.family));
             w.size.setStringValue(&NSString::from_str(&format!("{}", config.font.size)));
             w.line_height.setStringValue(&NSString::from_str(&format!("{}", config.font.line_height)));
@@ -428,11 +463,10 @@ impl Controller {
     }
 
     /// One tile per choice: the built-in icon, the official set, then imports.
-    /// Official tiles show the variant for the current macOS appearance.
-    fn rebuild_icons(&self) {
+    /// Official tiles show the version `icon_appearance` picks right now.
+    fn rebuild_icons(&self, appearance: Appearance) {
         let mtm = self.mtm();
         let target: &AnyObject = self.as_ref();
-        let appearance = macos::appearance();
         let default = crate::icon::path_for(&IconChoice::Default, appearance).or_else(default_icon_path);
         let mut choices: Vec<(String, String, Option<PathBuf>)> = vec![("".into(), "Default".into(), default)];
         for name in OFFICIAL {
@@ -568,7 +602,8 @@ impl Controller {
 
     /// Debug builds, for scripted checks without screen capture:
     /// OXTERM_SETTINGS_SNAPSHOT=/dir renders each pane to /dir/pane-N.png, and
-    /// OXTERM_SETTINGS_CLICK=graphite presses that icon tile.
+    /// OXTERM_SETTINGS_CLICK=graphite presses that icon tile, and
+    /// OXTERM_SETTINGS_VERSION=system picks that item in the Version menu.
     #[cfg(debug_assertions)]
     fn scripted_checks(&self) {
         if let Ok(dir) = std::env::var("OXTERM_SETTINGS_SNAPSHOT") {
@@ -591,6 +626,17 @@ impl Controller {
             }
             self.select_pane(0);
         }
+        if let Ok(value) = std::env::var("OXTERM_SETTINGS_VERSION") {
+            let menu = self.with_widgets(|w| w.icon_version.clone());
+            match (menu, ICON_VERSIONS.iter().position(|(_, v)| *v == value)) {
+                (Some(menu), Some(index)) => {
+                    menu.selectItemAtIndex(index as isize);
+                    // SAFETY: the menu's own action, sent as a real selection would.
+                    let _: () = unsafe { msg_send![self, iconVersionChanged: &*menu] };
+                }
+                _ => eprintln!("OXTERM_SETTINGS_VERSION: no item {value:?}"),
+            }
+        }
         if let Ok(value) = std::env::var("OXTERM_SETTINGS_CLICK") {
             let target = self.with_widgets(|w| w.icon_buttons.iter().find(|(v, _)| *v == value).map(|(_, b)| b.clone())).flatten();
             match target {
@@ -604,10 +650,10 @@ impl Controller {
 
 /// The tile value that matches the configured icon: a missing import or an
 /// unknown name shows as Default, which is what the app falls back to.
-fn selected_value(icon: &str) -> String {
+fn selected_value(icon: &str, appearance: Appearance) -> String {
     match IconChoice::parse(icon) {
         IconChoice::Default => String::new(),
-        choice => crate::icon::path_for(&choice, macos::appearance()).map(|_| icon.trim().to_string()).unwrap_or_default(),
+        choice => crate::icon::path_for(&choice, appearance).map(|_| icon.trim().to_string()).unwrap_or_default(),
     }
 }
 
