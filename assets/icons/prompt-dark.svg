@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 160 160">
+  <defs>
+    <clipPath id="m"><path d="M42 8H118A34 34 0 0 1 152 42V118A34 34 0 0 1 118 152H42A34 34 0 0 1 8 118V42A34 34 0 0 1 42 8Z"/></clipPath>
+    <linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b1b1b"/><stop offset="1" stop-color="#121212"/></linearGradient>
+    <linearGradient id="c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e2e2e"/><stop offset="1" stop-color="#262626"/></linearGradient>
+  </defs>
+  <path d="M42 8H118A34 34 0 0 1 152 42V118A34 34 0 0 1 118 152H42A34 34 0 0 1 8 118V42A34 34 0 0 1 42 8Z" fill="url(#b)"/>
+  <g clip-path="url(#m)">
+    <path d="M48 28H160V160H28V48A20 20 0 0 1 48 28Z" fill="url(#c)"/>
+    <path d="M28 48A20 20 0 0 1 48 28H160" fill="none" stroke="#3a3a3a" stroke-width="1"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-width="7.5" stroke-linecap="round">
+    <rect x="44" y="47" width="22" height="37" rx="11"/>
+    <path d="M51.5 74.5 58.5 56.5" stroke-width="6"/>
+    <path d="M74 57 93 84M93 57 74 84"/>
+  </g>
+  <rect x="100" y="47" width="17" height="37" rx="1.5" fill="#e6e6e6"/>
+</svg>

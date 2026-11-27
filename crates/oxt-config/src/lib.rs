@@ -24,6 +24,29 @@ pub struct Config {
 pub struct App {
     /// See [`IconChoice::parse`].
     pub icon: String,
+    /// Which version of an official icon shows. See [`IconAppearance`].
+    pub icon_appearance: IconAppearance,
+}
+
+/// Which version of an official icon shows: one of the two always, or
+/// whichever matches the macOS appearance (opt-in).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum IconAppearance {
+    Dark,
+    Light,
+    System,
+}
+
+impl IconAppearance {
+    /// The version to show, given the macOS appearance right now.
+    pub fn resolve(self, system: icon::Appearance) -> icon::Appearance {
+        match self {
+            IconAppearance::Dark => icon::Appearance::Dark,
+            IconAppearance::Light => icon::Appearance::Light,
+            IconAppearance::System => system,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -223,5 +246,17 @@ mod tests {
     fn bad_values_are_errors() {
         assert!(Config::parse("[theme.dark]\nbackground = \"red\"").unwrap_err().contains("#rrggbb"));
         assert!(Config::parse("[font\n").is_err());
+        assert!(Config::parse("[app]\nicon_appearance = \"auto\"").is_err());
+    }
+
+    #[test]
+    fn icon_appearance_is_dark_unless_opted_in() {
+        use icon::Appearance::{Dark, Light};
+        let config = Config::parse("").unwrap();
+        assert_eq!(config.app.icon_appearance, IconAppearance::Dark);
+        assert_eq!(config.app.icon_appearance.resolve(Light), Dark);
+        assert_eq!(IconAppearance::Light.resolve(Dark), Light);
+        assert_eq!(IconAppearance::System.resolve(Light), Light);
+        assert_eq!(IconAppearance::System.resolve(Dark), Dark);
     }
 }

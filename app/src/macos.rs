@@ -1,16 +1,18 @@
 //! The pieces of AppKit that GPUI doesn't wrap: Sparkle's updater, the
-//! standard About panel and the app icon.
+//! standard About panel, the app icon and the system appearance.
 //!
 //! `packaging/bundle.sh` embeds Sparkle.framework in Contents/Frameworks and
 //! this loads it at startup, so a `cargo run` build (no bundle, no framework)
 //! simply runs without updates.
 
 use std::cell::OnceCell;
+use std::ffi::c_void;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject};
-use objc2::{class, msg_send};
-use objc2_foundation::{NSBundle, NSString};
+use objc2::{MainThreadMarker, MainThreadOnly, class, define_class, msg_send};
+use objc2_foundation::{NSArray, NSBundle, NSObject, NSString};
+use oxt_config::icon::Appearance;
 
 thread_local! {
     /// Sparkle's controller. Created once on the main thread and kept for the
@@ -95,6 +97,72 @@ pub fn set_app_icon(path: Option<&std::path::Path>) -> IconApplied {
         let bundle = NSString::from_str(&bundle.to_string_lossy());
         let ok: bool = msg_send![&*workspace, setIcon: image.as_deref(), forFile: &*bundle, options: 0usize];
         if ok { IconApplied::Persisted } else { IconApplied::RuntimeOnly }
+    }
+}
+
+/// The macOS appearance, light or dark. 0xTerm never sets its own, so this is
+/// the system setting (including Auto as it switches). Debug builds take
+/// OXTERM_APPEARANCE=light|dark instead, to check icons without changing it.
+pub fn appearance() -> Appearance {
+    #[cfg(debug_assertions)]
+    match std::env::var("OXTERM_APPEARANCE").as_deref() {
+        Ok("light") => return Appearance::Light,
+        Ok("dark") => return Appearance::Dark,
+        _ => {}
+    }
+    // SAFETY: NSApplication's effectiveAppearance and NSAppearance's matcher,
+    // on the main thread. The names are the NSAppearanceName constants' values.
+    unsafe {
+        let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+        let appearance: Option<Retained<AnyObject>> = msg_send![&*app, effectiveAppearance];
+        let Some(appearance) = appearance else { return Appearance::Light };
+        let dark = NSString::from_str("NSAppearanceNameDarkAqua");
+        let names = NSArray::from_slice(&[&*NSString::from_str("NSAppearanceNameAqua"), &*dark]);
+        let best: Option<Retained<NSString>> = msg_send![&*appearance, bestMatchFromAppearancesWithNames: &*names];
+        if best.is_some_and(|best| best.isEqualToString(&dark)) { Appearance::Dark } else { Appearance::Light }
+    }
+}
+
+thread_local! {
+    /// Called when the macOS appearance changes; kept with its observer for the life of the app.
+    static APPEARANCE_OBSERVER: OnceCell<(Retained<AppearanceObserver>, fn())> = const { OnceCell::new() };
+}
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements and the observer doesn't implement Drop.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "OxtAppearanceObserver"]
+    struct AppearanceObserver;
+
+    impl AppearanceObserver {
+        #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
+        fn observe_value(&self, _key: Option<&NSString>, _object: Option<&AnyObject>, _change: Option<&AnyObject>, _context: *mut c_void) {
+            if let Some(on_change) = APPEARANCE_OBSERVER.with(|cell| cell.get().map(|(_, f)| *f)) {
+                on_change();
+            }
+        }
+    }
+);
+
+/// Calls `on_change` on the main thread whenever the macOS appearance may have
+/// changed (KVO on NSApp.effectiveAppearance, which can also fire when it
+/// didn't, so the callee compares). Registers once; later calls do nothing.
+pub fn observe_appearance(on_change: fn()) {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    if APPEARANCE_OBSERVER.with(|cell| cell.get().is_some()) {
+        return;
+    }
+    let observer = AppearanceObserver::alloc(mtm).set_ivars(());
+    // SAFETY: NSObject's init, and KVO registration on NSApplication's
+    // effectiveAppearance, which AppKit documents as observable. The observer
+    // is kept for the life of the app, so it is never removed.
+    unsafe {
+        let observer: Retained<AppearanceObserver> = msg_send![super(observer), init];
+        let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+        let key = NSString::from_str("effectiveAppearance");
+        let _: () = msg_send![&*app, addObserver: &*observer, forKeyPath: &*key, options: 0usize, context: std::ptr::null_mut::<c_void>()];
+        APPEARANCE_OBSERVER.with(|cell| _ = cell.set((observer, on_change)));
     }
 }
 

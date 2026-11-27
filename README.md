@@ -153,20 +153,27 @@ selection = "#264f78"
 ### App icon
 
 `icon` takes a name from the official set (chrome, graphite, midnight, ivory,
-amber, mint, ocean, crimson, violet, phosphor, mono, glass), previewed and
-downloadable at [0xterm.org/icons](https://0xterm.org/icons/). It also takes
-the file name of your own `.svg` or `.icns` placed in `~/.config/0xterm/icons/`:
+amber, mint, ocean, crimson, violet, phosphor, mono, glass, prompt, classic),
+previewed and downloadable at [0xterm.org/icons](https://0xterm.org/icons/).
+Each one, and the built-in icon, comes in a dark and a light version.
+`icon_appearance` picks which: `"dark"` (the default) or `"light"` always
+shows that one, and `"system"` matches the macOS appearance, switching when it
+does; while 0xTerm is closed, Finder keeps the version from its last run. A
+name with its version (`"amber-light"`) pins that one. `icon` also takes the
+file name of your own `.svg` or `.icns` placed in `~/.config/0xterm/icons/`:
 `icon = "mine.svg"`. The Dock changes when you save, and the icon stays after
 you quit, in the Dock, Finder, Launchpad and Spotlight, because 0xTerm sets it
 as the app's Finder icon. After an update it's set again on the first launch.
 A file that's missing or can't be loaded shows the built-in icon. In Settings,
-the Icon pane does all of this: click a tile, or **Import…** copies a file into
-that folder and selects it.
+the Icon pane does all of this: click a tile, choose a **Version** (Dark,
+Light, or Match macOS appearance), or **Import…** copies a file into that
+folder and selects it.
 
 A custom Finder icon is a file inside 0xTerm.app, so `codesign --verify
 --strict` reports the app as modified while one is set. Gatekeeper still
 accepts the app as notarized, and updates install normally. Set `icon = ""` to
-remove it.
+remove it; the built-in icon's light version is set the same way, so keep
+`icon_appearance` on `"dark"` too.
 
 ## Build from source
 

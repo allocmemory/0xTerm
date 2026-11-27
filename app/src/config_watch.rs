@@ -59,13 +59,15 @@ pub fn watch(cx: &mut App) {
 }
 
 fn apply(cx: &mut App) {
-    crate::settings_window::refresh();
     let (config, error) = Config::load();
     if let Some(error) = error {
         eprintln!("0xTerm: config error, keeping the current settings: {error}");
+        crate::settings_window::refresh();
         return;
     }
+    // The icon first, so Settings shows what this apply managed.
     crate::icon::apply_if_changed(&config);
+    crate::settings_window::refresh();
     let targets = cx.try_global::<Workspaces>().map(|w| w.0.clone()).unwrap_or_default();
     for (window, workspace) in targets {
         let Some(workspace) = workspace.upgrade() else { continue };

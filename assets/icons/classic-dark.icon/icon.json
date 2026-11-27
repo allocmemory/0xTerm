@@ -1,0 +1,25 @@
+{
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "glyphs.svg",
+          "name": "glyphs"
+        }
+      ]
+    },
+    {
+      "layers": [
+        {
+          "image-name": "background.svg",
+          "name": "background"
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
